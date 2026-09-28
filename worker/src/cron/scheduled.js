@@ -4,6 +4,7 @@ import { sendDiscord } from '../lib/discord.js';
 import { calcNextSpawn } from '../lib/spawn.js';
 import { recheckLicenses } from '../lib/gumroad.js';
 import { spawnEndStmt, cronScheduleRefresh } from '../lib/schedule-post.js';
+import { syncCommands } from '../lib/discord-commands.js';
 
 export async function handleScheduled(env) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
@@ -265,6 +266,11 @@ export async function handleScheduled(env) {
   try {
     await env.DB.prepare("DELETE FROM join_requests WHERE status != 'pending' AND resolved_at < unixepoch() - 2592000").run();
   } catch (e) { console.error('Join request cleanup error:', e); }
+
+  // --- Discord slash commands: re-register after a deploy that changed them (once per isolate). ---
+  try {
+    await syncCommands(env);
+  } catch (e) { console.error('Command sync error:', e); }
 
   // --- Gumroad licenses: re-verify a few whose last check is older than ~20 h (see lib/gumroad.js). ---
   try {
