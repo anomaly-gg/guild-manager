@@ -101,17 +101,41 @@ function state(boss, now) {
   return { key: 'waiting', remaining };
 }
 
-// Lines for /next: up-now bosses first, then soonest. Team clock in `tz`.
+export function dayIn(ts, tz) {
+  try { return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: tz }); }
+  catch { return new Date(ts).toISOString().slice(0, 10); }
+}
+
+// Spawns closer together than this share a block; a wider gap gets a dashed divider (guild schedule-post style).
+const BLOCK_GAP_MS = 30 * 60000;
+const DIVIDER = '-'.repeat(33);
+const TIME_WIDTH = 8;   // "11:30 PM"; shorter times are padded with no-break spaces so the code pills line up
+
+// Schedule for /next: up-now bosses first, then soonest, grouped under day headers in the team clock `tz`.
 export function nextSpawnsText(bosses, tz, now = Date.now(), limit = 10) {
   const rank = { spawned: 0, window: 0, waiting: 1 };
   const rows = bosses.map(b => ({ b, st: state(b, now) }))
     .sort((x, y) => (rank[x.st.key] - rank[y.st.key]) || (x.b.next_spawn - y.b.next_spawn))
     .slice(0, limit);
   if (!rows.length) return 'No boss timers yet. Add some in Guild Manager → Timers.';
-  return rows.map(({ b, st }) => {
-    const where = b.location ? ` · ${b.location}` : '';
-    if (st.key === 'spawned') return `🔴 **${b.name}** — UP since ${clockIn(b.next_spawn, tz)}${where}`;
-    if (st.key === 'window') return `🟠 **${b.name}** — window open, ${fmtDuration(st.windowLeft)} left${where}`;
-    return `${st.remaining <= (b.alert_minutes || 5) * 60000 ? '🟡' : '🟢'} **${b.name}** — in ${fmtDuration(st.remaining)} (${clockIn(b.next_spawn, tz)})${where}`;
-  }).join('\n');
+  const out = [];
+  let day = null, prev = null;
+  for (const { b, st } of rows) {
+    const up = st.key !== 'waiting';
+    const d = up ? 'Up now' : dayIn(b.next_spawn, tz);
+    if (d !== day) {
+      if (day !== null) out.push('');
+      out.push(`**${d}**`);
+      day = d; prev = null;
+    } else if (!up && prev !== null && b.next_spawn - prev > BLOCK_GAP_MS) {
+      out.push(DIVIDER);
+    }
+    prev = b.next_spawn;
+    const cells = [`\`${clockIn(b.next_spawn, tz).padEnd(TIME_WIDTH, ' ')}\``, b.name];
+    if (b.location) cells.push(b.location);
+    if (st.key === 'spawned') cells.push('🔴 UP');
+    else if (st.key === 'window') cells.push(`🟠 window, ${fmtDuration(st.windowLeft)} left`);
+    out.push(cells.join(' | '));
+  }
+  return out.join('\n');
 }
