@@ -10,6 +10,7 @@ import { createToken } from '../lib/auth.js';
 import { guildName, guildRoles } from '../lib/discord-interactions.js';
 import { parseGroups, cleanGroups } from '../lib/spawn-groups.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
+import { DEFAULT_MINUTES, clampMinutes } from '../lib/discord-cleanup.js';
 
 // Linked servers for Settings; rows linked before names were fetched get their name filled in here.
 async function linkedGuildsWithNames(env, teamId) {
@@ -81,6 +82,9 @@ export const routes = [
       inviteApproval: !!(settings?.invite_approval),
       publicToken: settings?.public_token || null,
       discordGuilds: await linkedGuildsWithNames(env, teamId),
+      discordAutoDelete: (settings?.discord_autodelete ?? 1) ? true : false,
+      discordDeleteActionMin: settings?.discord_delete_action_min ?? DEFAULT_MINUTES.action,
+      discordDeleteNextMin: settings?.discord_delete_next_min ?? DEFAULT_MINUTES.next,
       attendancePoints: settings?.attendance_points ?? 1,
       attendanceAutoApprove: !!settings?.attendance_auto_approve,
       attendanceSelfCheckin: settings?.attendance_self_checkin ?? 1 ? true : false,
@@ -126,6 +130,9 @@ export const routes = [
         if (typeof groups === 'string') return json({ error: groups }, 400);
         sets.push('spawn_groups = ?'); vals.push(groups.length ? JSON.stringify(groups) : null);
       }
+      if (body.discordAutoDelete !== undefined) { sets.push('discord_autodelete = ?'); vals.push(body.discordAutoDelete ? 1 : 0); }
+      if (body.discordDeleteActionMin !== undefined) { sets.push('discord_delete_action_min = ?'); vals.push(clampMinutes(body.discordDeleteActionMin, DEFAULT_MINUTES.action)); }
+      if (body.discordDeleteNextMin !== undefined) { sets.push('discord_delete_next_min = ?'); vals.push(clampMinutes(body.discordDeleteNextMin, DEFAULT_MINUTES.next)); }
       if (body.unlinkDiscordGuild) await env.DB.prepare('DELETE FROM discord_guilds WHERE guild_id = ? AND team_id = ?').bind(String(body.unlinkDiscordGuild), teamId).run();   // linking happens via Add to Discord or /link
       if (body.onWarning !== undefined) { sets.push('on_warning = ?'); vals.push(body.onWarning ? 1 : 0); }
       if (body.onSpawn !== undefined) { sets.push('on_spawn = ?'); vals.push(body.onSpawn ? 1 : 0); }

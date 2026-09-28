@@ -14,8 +14,9 @@ import { killBoss } from '../lib/boss-kill.js';
 import { attendanceSettings, dayIn, claimFlags, alreadyClaimed, createClaim, fetchImage, storeImage } from '../lib/attendance.js';
 import {
   InteractionType, verifyDiscordRequest, pong, message, deferred, choices, editOriginal,
-  optionValue, focusedOption, invoker, linkGuild, unlinkGuild,
+  optionValue, focusedOption, invoker, linkGuild, unlinkGuild, deleteOriginal, followUpEphemeral,
 } from '../lib/discord-interactions.js';
+import { queueReplyCleanup } from '../lib/discord-cleanup.js';
 import { nextSpawnsText, fmtDuration, clockIn } from '../lib/schedule-format.js';
 import { parseGroups, groupTag } from '../lib/spawn-groups.js';
 import { refreshSchedulePost } from '../lib/schedule-post.js';
@@ -31,6 +32,8 @@ async function membership(env, teamId, discordUserId) {
   return env.DB.prepare('SELECT m.user_id, m.role FROM team_members m JOIN users u ON u.id = m.user_id WHERE m.team_id = ? AND u.discord_id = ?')
     .bind(teamId, discordUserId).first();
 }
+// A command result: plain text = the public reply; fail(text) = only the invoker should see it.
+const fail = (text) => ({ text, error: true });
 const footer = (team) => `\n-# Team time (${team.timezone || 'Asia/Manila'}) · ${team.public_token ? `[Timer page](${APP_URL}timers.html?t=${team.public_token}) · ` : ''}[Guild Manager](${APP_URL})`;
 
 // ---- commands (each returns the text to show)
@@ -59,7 +62,7 @@ async function cmdUnlink(env, interaction) {
 
 async function cmdNext(env, interaction) {
   const team = await linkedTeam(env, interaction.guild_id);
-  if (!team) return 'This server is not linked to a team yet. A leader or officer runs `/link <invite code>`.';
+  if (!team) return fail('This server is not linked to a team yet. A leader or officer runs `/link <invite code>`.');
   const count = Math.max(1, Math.min(25, Number(optionValue(interaction, 'count')) || 10));
   const bosses = await env.DB.prepare('SELECT * FROM bosses WHERE team_id = ?').bind(team.id).all();
   return `**${team.name}** — next spawns\n${nextSpawnsText(bosses.results, team.timezone || 'Asia/Manila', Date.now(), count, parseGroups(team.spawn_groups))}${footer(team)}`;
@@ -67,14 +70,14 @@ async function cmdNext(env, interaction) {
 
 async function cmdKilled(env, interaction, after) {
   const team = await linkedTeam(env, interaction.guild_id);
-  if (!team) return 'This server is not linked to a team yet. A leader or officer runs `/link <invite code>`.';
+  if (!team) return fail('This server is not linked to a team yet. A leader or officer runs `/link <invite code>`.');
   const who = invoker(interaction);
   const m = await membership(env, team.id, who.id);
-  if (!m) return `Only members of **${team.name}** in Guild Manager can log kills. Join the team there with your Discord account.`;
+  if (!m) return fail(`Only members of **${team.name}** in Guild Manager can log kills. Join the team there with your Discord account.`);
   const minutesAgo = Math.max(0, Math.min(1440, Number(optionValue(interaction, 'minutes_ago')) || 0));
   const bosses = (await env.DB.prepare('SELECT * FROM bosses WHERE team_id = ?').bind(team.id).all()).results;
   const boss = pickBoss(bosses, optionValue(interaction, 'boss'));
-  if (typeof boss === 'string') return boss;
+  if (typeof boss === 'string') return fail(boss);
   const deathTime = Date.now() - minutesAgo * 60000;
   const { nextSpawn, day } = await killBoss(env, { teamId: team.id, boss, deathTime, userId: m.user_id, tz: team.timezone });
   after(() => refreshSchedulePost(env, team.id, { touchedDay: day }));
@@ -96,17 +99,17 @@ function pickBoss(bosses, raw) {
 // /assign boss group — officer tags a boss's next spawn with a spawn group (or clears it with "none").
 async function cmdAssign(env, interaction, after) {
   const team = await linkedTeam(env, interaction.guild_id);
-  if (!team) return 'This server is not linked to a team yet.';
+  if (!team) return fail('This server is not linked to a team yet.');
   const m = await membership(env, team.id, invoker(interaction).id);
-  if (!m || m.role === 'member') return 'Only the leader or an officer can assign spawns.';
+  if (!m || m.role === 'member') return fail('Only the leader or an officer can assign spawns.');
   const groups = parseGroups(team.spawn_groups);
-  if (!groups.length) return 'This team has no spawn groups yet. Add them in Guild Manager → Settings → Daily schedule post.';
+  if (!groups.length) return fail('This team has no spawn groups yet. Add them in Guild Manager → Settings → Daily schedule post.');
   const bosses = (await env.DB.prepare('SELECT id, name, next_spawn FROM bosses WHERE team_id = ?').bind(team.id).all()).results;
   const boss = pickBoss(bosses, optionValue(interaction, 'boss'));
-  if (typeof boss === 'string') return boss;
+  if (typeof boss === 'string') return fail(boss);
   const g = String(optionValue(interaction, 'group') || '').trim();
   const group = g.toLowerCase() === 'none' ? null : groups.find(x => x.id === g) || groups.find(x => x.name.toLowerCase() === g.replace(/^@/, '').toLowerCase());
-  if (group === undefined) return `No group called "${g}". Groups: ${groups.map(x => x.name).join(', ')}.`;
+  if (group === undefined) return fail(`No group called "${g}". Groups: ${groups.map(x => x.name).join(', ')}.`);
   await env.DB.prepare('UPDATE bosses SET spawn_group = ? WHERE id = ?').bind(group?.id || null, boss.id).run();
   after(() => refreshSchedulePost(env, team.id));
   const at = clockIn(boss.next_spawn, team.timezone || 'Asia/Manila');
@@ -129,7 +132,7 @@ function pickBosses(bosses, values) {
 // /here boss [boss2] proof [note] — member self check-in with a screenshot
 async function cmdHere(env, interaction) {
   const team = await linkedTeam(env, interaction.guild_id);
-  if (!team) return 'This server is not linked to a team yet.';
+  if (!team) return fail('This server is not linked to a team yet.');
   const who = invoker(interaction);
   const m = await membership(env, team.id, who.id);
   if (!m) return `Only members of **${team.name}** in Guild Manager can check in. Join the team there with your Discord account.`;
@@ -137,7 +140,7 @@ async function cmdHere(env, interaction) {
   if (!cfg.selfCheckin) return 'This team logs attendance by officer roll call only. Ask an officer to run `/rollcall`.';
   const bosses = (await env.DB.prepare('SELECT id, name FROM bosses WHERE team_id = ?').bind(team.id).all()).results;
   const picked = pickBosses(bosses, [optionValue(interaction, 'boss'), optionValue(interaction, 'boss2')]);
-  if (typeof picked === 'string') return picked;
+  if (typeof picked === 'string') return fail(picked);
   const day = dayIn(cfg.tz);
   const dup = await alreadyClaimed(env, { teamId: team.id, userId: m.user_id, bosses: picked, day });
   if (dup.length) return `You already checked in for ${dup.join(', ')} today.`;
@@ -160,16 +163,16 @@ async function cmdHere(env, interaction) {
 // /rollcall boss members [boss2] [note] — officer logs who was in the rally; approved immediately
 async function cmdRollcall(env, interaction) {
   const team = await linkedTeam(env, interaction.guild_id);
-  if (!team) return 'This server is not linked to a team yet.';
+  if (!team) return fail('This server is not linked to a team yet.');
   const who = invoker(interaction);
   const m = await membership(env, team.id, who.id);
-  if (!m || m.role === 'member') return 'Only the leader or an officer can run a roll call.';
+  if (!m || m.role === 'member') return fail('Only the leader or an officer can run a roll call.');
   const cfg = await attendanceSettings(env, team.id);
   const bosses = (await env.DB.prepare('SELECT id, name FROM bosses WHERE team_id = ?').bind(team.id).all()).results;
   const picked = pickBosses(bosses, [optionValue(interaction, 'boss'), optionValue(interaction, 'boss2')]);
-  if (typeof picked === 'string') return picked;
+  if (typeof picked === 'string') return fail(picked);
   const mentioned = [...String(optionValue(interaction, 'members') || '').matchAll(/<@!?(\d+)>/g)].map(x => x[1]);
-  if (!mentioned.length) return 'Mention the members who were there, e.g. `@Kaizuka @Ratan`.';
+  if (!mentioned.length) return fail('Mention the members who were there, e.g. `@Kaizuka @Ratan`.');
   const rows = (await env.DB.prepare(`SELECT m.user_id, u.username, u.discord_id FROM team_members m JOIN users u ON u.id = m.user_id WHERE m.team_id = ? AND u.discord_id IN (${mentioned.map(() => '?').join(',')})`).bind(team.id, ...mentioned).all()).results;
   const day = dayIn(cfg.tz);
   const note = String(optionValue(interaction, 'note') || '').trim().slice(0, 200) || null;
@@ -235,8 +238,17 @@ export const routes = [
       const ephemeral = EPHEMERAL_COMMANDS.has(name);
       const later = [];   // follow-up work that should not hold up the reply (schedule post edits)
       const work = fn(env, interaction, (task) => later.push(task))
-        .catch(e => { console.error(`discord /${name} failed:`, e); return 'Something went wrong on our side. Try again in a minute.'; })
-        .then(text => editOriginal(env, interaction.token, text))
+        .catch(e => { console.error(`discord /${name} failed:`, e); return fail('Something went wrong on our side. Try again in a minute.'); })
+        .then(async (result) => {
+          const text = typeof result === 'string' ? result : result.text;
+          // An error in a public command: drop the public placeholder and tell only the invoker.
+          if (result?.error && !ephemeral) {
+            await deleteOriginal(env, interaction.token);
+            return followUpEphemeral(env, interaction.token, text);
+          }
+          await editOriginal(env, interaction.token, text);
+          if (!ephemeral) await queueReplyCleanup(env, { command: name, guildId: interaction.guild_id, token: interaction.token });
+        })
         .then(() => Promise.allSettled(later.map(task => task())));
       if (ctx?.waitUntil) { ctx.waitUntil(work); return deferred(ephemeral); }
       await work; return deferred(ephemeral);   // local harness without ctx

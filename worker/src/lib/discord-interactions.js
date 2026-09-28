@@ -43,6 +43,22 @@ export async function editOriginal(env, interactionToken, content) {
   if (!r.ok) console.error('discord editOriginal failed:', r.status, await r.text().catch(() => ''));
 }
 
+// Remove the deferred reply (auto-delete, or to swap a public error for a private one).
+export async function deleteOriginal(env, interactionToken) {
+  const r = await fetch(`${env.DISCORD_API || API}/webhooks/${env.DISCORD_APP_ID}/${interactionToken}/messages/@original`, { method: 'DELETE' });
+  if (!r.ok && r.status !== 404) console.error('discord deleteOriginal failed:', r.status);
+}
+
+// A reply only the person who ran the command can see.
+export async function followUpEphemeral(env, interactionToken, content) {
+  const r = await fetch(`${env.DISCORD_API || API}/webhooks/${env.DISCORD_APP_ID}/${interactionToken}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: String(content).slice(0, 2000), flags: EPHEMERAL, allowed_mentions: { parse: [] } }),
+  });
+  if (!r.ok) console.error('discord followUp failed:', r.status, await r.text().catch(() => ''));
+}
+
 // ---- server links (discord_guilds): a server belongs to one team; a team may have many servers.
 
 export async function guildName(env, guildId) {

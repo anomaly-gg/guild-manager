@@ -5,6 +5,7 @@ import { calcNextSpawn } from '../lib/spawn.js';
 import { recheckLicenses } from '../lib/gumroad.js';
 import { spawnEndStmt, cronScheduleRefresh } from '../lib/schedule-post.js';
 import { syncCommands } from '../lib/discord-commands.js';
+import { runReplyCleanup } from '../lib/discord-cleanup.js';
 
 export async function handleScheduled(env) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
@@ -266,6 +267,11 @@ export async function handleScheduled(env) {
   try {
     await env.DB.prepare("DELETE FROM join_requests WHERE status != 'pending' AND resolved_at < unixepoch() - 2592000").run();
   } catch (e) { console.error('Join request cleanup error:', e); }
+
+  // --- Discord: delete slash-command replies that are due (lib/discord-cleanup.js). ---
+  try {
+    await runReplyCleanup(env);
+  } catch (e) { console.error('Reply cleanup error:', e); }
 
   // --- Discord slash commands: re-register after a deploy that changed them (once per isolate). ---
   try {

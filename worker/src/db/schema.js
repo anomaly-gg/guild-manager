@@ -240,6 +240,7 @@ async function initDB(db) {
     ['team_settings', 'rsvp_roles'], ['team_settings', 'points_name'], ['users', 'gumroad_license'],
     ['team_settings', 'discord_guild_id'], ['discord_guilds', null], ['attendance_claims', null], ['team_settings', 'attendance_self_checkin'],
     ['schedule_spawns', null], ['team_settings', 'spawn_groups'], ['bosses', 'spawn_group'], ['app_state', null],
+    ['discord_cleanup', null], ['team_settings', 'discord_delete_next_min'],
   ];
   const tables = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'").all();
   const createSql = Object.fromEntries(tables.results.map(t => [t.name, t.sql || '']));
@@ -359,6 +360,11 @@ async function initDB(db) {
       'CREATE INDEX IF NOT EXISTS idx_schedule_spawns_team_day ON schedule_spawns (team_id, day)',
       // small key/value store for app-wide state (e.g. the slash-command list Discord last accepted)
       'CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT)',
+      // slash-command reply auto-delete (lib/discord-cleanup.js)
+      'ALTER TABLE team_settings ADD COLUMN discord_autodelete INTEGER DEFAULT 1',
+      'ALTER TABLE team_settings ADD COLUMN discord_delete_action_min INTEGER DEFAULT 1',
+      'ALTER TABLE team_settings ADD COLUMN discord_delete_next_min INTEGER DEFAULT 5',
+      'CREATE TABLE IF NOT EXISTS discord_cleanup (token TEXT PRIMARY KEY, delete_at INTEGER NOT NULL)',
       // carry over the single-server links made before this table existed
       'INSERT OR IGNORE INTO discord_guilds (guild_id, team_id) SELECT discord_guild_id, team_id FROM team_settings WHERE discord_guild_id IS NOT NULL',
       `CREATE TABLE IF NOT EXISTS join_requests (

@@ -93,6 +93,13 @@ function slashCard() {
         <div class="tf-actions" style="justify-content:flex-start">
             <button class="btn btn-primary btn-sm" data-action="discord-add">${guilds.length ? 'Add another server' : 'Add to Discord'}</button>
         </div>
+        <div class="t-h3">Keep channels clean</div>
+        <div class="s-toggles">${toggle('sAutoDel', 'Delete command replies after a while', settings.discordAutoDelete !== false, { help: 'Mistakes and "not allowed" replies are always shown only to the person who typed the command.' })}</div>
+        <div class="tform" style="margin-top:10px">
+            <label class="tf-field"><span>/killed, /assign, /rollcall <em>minutes</em></span><input type="number" id="sDelAction" min="1" max="14" value="${settings.discordDeleteActionMin ?? 1}"></label>
+            <label class="tf-field"><span>/next <em>minutes</em></span><input type="number" id="sDelNext" min="1" max="14" value="${settings.discordDeleteNextMin ?? 5}"></label>
+            <div class="tf-actions tf-wide"><button class="btn btn-primary btn-sm" data-action="save-autodelete">Save</button></div>
+        </div>
         <p class="tf-help" style="margin-top:8px">Discord asks which server to add it to and sends you straight back here, linked. Prefer to do it by hand? Run <code>/link ${esc(team()?.invite_code || '<invite code>')}</code> in your server (leader or officer, signed in here with Discord).</p>
     </section>`;
 }
@@ -276,6 +283,7 @@ const act = guard('settings.act', async (a, btn) => {
             break;
         }
         case 'clear-channel': { const which = btn.dataset.which; if (confirm(`Clear the ${which.toLowerCase()} webhook? Alerts fall back to the main one.`)) { if (await put({ ['webhook' + which]: '' }, `${which} webhook cleared`)) await reload(); } break; }
+        case 'save-autodelete': await put({ discordAutoDelete: on('sAutoDel'), discordDeleteActionMin: Math.max(1, Math.min(14, parseInt(val('sDelAction')) || 1)), discordDeleteNextMin: Math.max(1, Math.min(14, parseInt(val('sDelNext')) || 5)) }, 'Reply clean-up saved'); break;
         case 'save-attendance': await put({ attendancePoints: Math.max(0, Math.min(100, parseInt(val('sAttPts')) || 0)), attendanceSelfCheckin: on('sAttSelf'), attendanceAutoApprove: on('sAttAuto') }, 'Attendance settings saved'); break;
         case 'save-events': {
             const list = val('sRsvp').split(',').map(s => s.trim()).filter(Boolean).slice(0, 8);
