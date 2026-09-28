@@ -15,8 +15,9 @@ export function nextSpawnFor(b, tz, now = Date.now()) {
 }
 
 // -> { id, stmt } — stmt is a bound D1 statement, so callers can .run() one or batch() many.
+// b.nextSpawnAt (screenshot import) starts the timer at a known spawn instead of from the rule.
 export function bossInsertStmt(env, teamId, b, tz, now = Date.now()) {
-  const nextSpawn = nextSpawnFor(b, tz, now);
+  const nextSpawn = Number.isFinite(b.nextSpawnAt) ? b.nextSpawnAt : nextSpawnFor(b, tz, now);
   const alertMinutes = b.alertMinutes || 5;
   const warned = (nextSpawn - now) <= alertMinutes * 60000 ? 1 : 0;   // no instant "spawning soon" ping for a fresh timer
   const windowMs = Math.max(0, Math.min(86400000, parseInt(b.windowMs) || 0));

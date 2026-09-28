@@ -14,6 +14,7 @@ import { routes as publicRoutes } from './routes/public.js';
 import { routes as teamRoutes } from './routes/teams.js';
 import { routes as inviteRoutes } from './routes/invites.js';
 import { routes as bossRoutes } from './routes/bosses.js';
+import { routes as scheduleImportRoutes } from './routes/schedule-import.js';
 import { routes as settingsRoutes } from './routes/settings.js';
 import { routes as eventRoutes } from './routes/events.js';
 import { routes as memberRoutes } from './routes/members.js';
@@ -26,7 +27,7 @@ import { routes as attendanceRoutes } from './routes/attendance.js';
 
 const PUBLIC_ROUTES = [...authRoutes, ...billingRoutes, ...publicRoutes, ...discordRoutes];
 const PROTECTED_ROUTES = [
-  ...accountRoutes, ...attendanceRoutes, ...teamRoutes, ...inviteRoutes, ...bossRoutes, ...settingsRoutes, ...eventRoutes,
+  ...accountRoutes, ...attendanceRoutes, ...teamRoutes, ...inviteRoutes, ...scheduleImportRoutes, ...bossRoutes, ...settingsRoutes, ...eventRoutes,
   ...memberRoutes, ...lootRoutes, ...dkpRoutes,
   ...rotationRoutes,
 ];

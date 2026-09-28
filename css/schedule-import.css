@@ -1,0 +1,38 @@
+/* Timers → Import from screenshot (js/modules/schedule-import.js) */
+
+.si-card { max-height: 90vh; overflow-y: auto; }
+.si-card code { font-family: var(--mono); background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+.si-drop { margin: 12px 0; padding: 18px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-sm); text-align: center; cursor: default; outline: none; }
+.si-drop:focus, .si-drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.si-drop-main { font-size: 0.92rem; }
+.si-drop-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
+.si-pick { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.si-preview { max-width: 100%; max-height: 180px; border-radius: var(--radius-sm); display: block; margin: 0 auto; }
+.si-status { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-muted); min-height: 0; }
+.si-status .spinner { width: 16px; height: 16px; margin: 0; }
+
+.si-list { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.si-row { display: grid; grid-template-columns: auto 74px minmax(0, 1.4fr) minmax(0, 1fr) auto; grid-template-areas: "check time read target act" ". . extra extra extra"; align-items: center; gap: 2px 10px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.85rem; }
+.si-row.off { opacity: 0.55; }
+.si-row input[type="checkbox"] { grid-area: check; accent-color: var(--accent); }
+.si-time { grid-area: time; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.si-time small { display: block; font-family: inherit; font-size: 0.68rem; color: var(--text-dim); }
+.si-read { grid-area: read; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-muted); }
+.si-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.si-read .chip { flex-shrink: 0; font-size: 0.68rem; }
+.si-read small { color: var(--text-dim); }
+.si-target { grid-area: target; min-width: 0; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font-size: 0.82rem; }
+.si-act { grid-area: act; width: 64px; justify-content: center; text-align: center; }
+.si-extra { grid-area: extra; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.75rem; }
+.si-extra:empty { display: none; }
+.si-note { color: var(--text-dim); }
+.si-warn { color: var(--warn); }
+.si-rule { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); }
+.si-rule input { width: 56px; padding: 3px 6px; border: 1px solid var(--border-strong); border-radius: 4px; background: var(--surface-2); color: var(--text); }
+.si-empty { padding: 12px; font-size: 0.88rem; color: var(--text-muted); }
+.si-raw { margin: 6px 0 10px; font-size: 0.78rem; color: var(--text-dim); }
+.si-raw pre { white-space: pre-wrap; font-family: var(--mono); background: var(--surface-2); padding: 8px; border-radius: var(--radius-sm); max-height: 200px; overflow: auto; }
+
+@media (max-width: 560px) {
+    .si-row { grid-template-columns: auto 64px minmax(0, 1fr) auto; grid-template-areas: "check time read act" ". target target target" ". extra extra extra"; }
+}

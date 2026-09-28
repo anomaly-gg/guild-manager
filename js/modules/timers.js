@@ -95,6 +95,7 @@ function render() {
     if (!el) return;
     const more = [
         canManage() ? `<button class="menu-item" data-action="presets">Add from a game preset</button>` : '',
+        canManage() ? `<button class="menu-item" data-action="import-shot">Import from screenshot</button>` : '',
         `<button class="menu-item" data-action="export">Export JSON</button>`,
         canManage() ? `<button class="menu-item" data-action="import">Import JSON</button>` : '',
         isPremium() ? `<button class="menu-item" data-action="templates">Boss templates</button>` : '',
@@ -150,6 +151,7 @@ function onClick(e) {
         case 'import': root().querySelector('[data-role="importfile"]').click(); break;
         case 'templates': showTemplates(); break;
         case 'presets': showPresets(); break;
+        case 'import-shot': import('./schedule-import.js?v=20260929a').then(m => m.open({ onDone: () => reload(true) })); break;
         case 'history': showHistory(); break;
         case 'removeall': removeAll(); break;
         case 'more': btn.closest('.tcard')?.classList.toggle('open'); break;
