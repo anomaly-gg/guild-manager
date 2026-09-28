@@ -6,6 +6,7 @@ import { recheckLicenses } from '../lib/gumroad.js';
 import { spawnEndStmt, cronScheduleRefresh } from '../lib/schedule-post.js';
 import { syncCommands } from '../lib/discord-commands.js';
 import { runReplyCleanup } from '../lib/discord-cleanup.js';
+import { alertSoon, alertSpawned, alertEnded } from '../lib/boss-alerts.js';
 
 export async function handleScheduled(env) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
@@ -17,6 +18,7 @@ export async function handleScheduled(env) {
   const dbWrites = [];
   const discordSends = [];
   const scheduleTouched = new Map();   // teamId -> day of a spawn that ended this tick (or null)
+  const alertIdWrites = [];            // alert message ids to remember, known once the sends finish
 
   // --- BOSSES: merge 'waiting' (warn/spawn) + 'spawned' (auto-reset) into one
   //     query with team_settings JOINed, eliminating per-boss N+1 settings lookups. ---
@@ -32,44 +34,42 @@ export async function handleScheduled(env) {
     for (const boss of bosses.results) {
       try {
         const bossHook = boss.webhook_boss || boss.webhook_url;
+        const tz = boss.timezone || 'Asia/Manila';
         if (boss.status === 'waiting') {
           const remaining = boss.next_spawn - now;
           const alertMs = (boss.alert_minutes || 5) * 60000;
 
           if (remaining > 0 && remaining <= alertMs && !boss.warned) {
             if (boss.on_warning && bossHook) {
-              const minLeft = Math.max(1, Math.round(remaining / 60000));
-              discordSends.push(sendDiscord(bossHook, `${boss.name} - Spawning Soon!`,
-                `**${boss.name}** spawns in **${minLeft} minute${minLeft !== 1 ? 's' : ''}**!`, 16760576));
+              discordSends.push(alertSoon(env, bossHook, boss, tz, now).then(id => {
+                if (id) alertIdWrites.push(env.DB.prepare('UPDATE bosses SET alert_soon_msg = ? WHERE id = ?').bind(id, boss.id));
+              }));
             }
             dbWrites.push(env.DB.prepare('UPDATE bosses SET warned = 1 WHERE id = ?').bind(boss.id));
             continue;
           }
 
           if (remaining <= 0) {
-            const resetMin = boss.auto_reset_minutes ?? 5;
-            const resetMs = boss.window_ms > 0 ? boss.window_ms : resetMin * 60000;
-            if (!boss.spawn_notified && boss.on_spawn && bossHook) {
-              discordSends.push(sendDiscord(bossHook, `${boss.name} has SPAWNED!`,
-                boss.window_ms > 0
-                  ? `**${boss.name}**'s spawn window is open for the next ${Math.round(boss.window_ms / 60000)} minutes.`
-                  : `**${boss.name}** is now available!\nAuto-reset in ${resetMin} minute${resetMin !== 1 ? 's' : ''} if not killed.`, 15548997));
+            const resetMs = boss.window_ms > 0 ? boss.window_ms : (boss.auto_reset_minutes ?? 5) * 60000;
+            // Spawn alerts on: a new (pinging) message. Off: the "soon" message, if any, turns into it.
+            if (!boss.spawn_notified && bossHook && (boss.on_spawn || boss.alert_soon_msg)) {
+              discordSends.push(alertSpawned(env, bossHook, boss, tz, { post: !!boss.on_spawn }).then(({ spawn }) => {
+                // status guard: a kill logged in the meantime already closed this spawn's alerts
+                alertIdWrites.push(env.DB.prepare("UPDATE bosses SET alert_spawn_msg = ?, alert_soon_msg = NULL WHERE id = ? AND status = 'spawned'").bind(spawn, boss.id));
+              }));
             }
             dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = ?, auto_reset_at = ?, spawn_notified = 1 WHERE id = ?')
               .bind('spawned', now, now + resetMs, boss.id));
             if (!scheduleTouched.has(boss.team_id)) scheduleTouched.set(boss.team_id, null);
           }
         } else if (boss.status === 'spawned' && boss.auto_reset_at != null && boss.auto_reset_at <= now) {
-          const tz = boss.timezone || 'Asia/Manila';
           const nextSpawn = calcNextSpawn(boss, now, tz);
           const ended = spawnEndStmt(env, { teamId: boss.team_id, boss, outcome: 'reset', endedAt: now, tz });
-          dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0, spawn_group = NULL, next_spawn = ? WHERE id = ?')
+          dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0, spawn_group = NULL, alert_soon_msg = NULL, alert_spawn_msg = NULL, next_spawn = ? WHERE id = ?')
             .bind('waiting', nextSpawn, boss.id), ended.stmt);
           scheduleTouched.set(boss.team_id, ended.day);
-          if (boss.on_spawn && bossHook) {
-            discordSends.push(sendDiscord(bossHook, `${boss.name} - Auto Reset`,
-              `**${boss.name}** was not killed in time and has been reset.\nNext spawn recalculated.`, 9807270));
-          }
+          // No new message: the spawn's alert is edited to say it reset.
+          discordSends.push(alertEnded(env, bossHook, boss, tz, { outcome: 'reset', at: now, nextSpawn }));
         }
       } catch (e) { console.error('Boss processing error:', boss.id, e); }
     }
@@ -148,6 +148,9 @@ export async function handleScheduled(env) {
   if (discordSends.length > 0) {
     await Promise.allSettled(discordSends);
     discordSends.length = 0;
+  }
+  if (alertIdWrites.length > 0) {
+    try { await env.DB.batch(alertIdWrites); } catch (e) { console.error('Alert id write error:', e); }
   }
 
   // --- Daily schedule posts: new day at 00:00 team time, edits for bosses that changed above. ---

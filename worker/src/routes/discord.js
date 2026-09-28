@@ -20,6 +20,7 @@ import { queueReplyCleanup } from '../lib/discord-cleanup.js';
 import { nextSpawnsText, fmtDuration, clockIn } from '../lib/schedule-format.js';
 import { parseGroups, groupTag } from '../lib/spawn-groups.js';
 import { refreshSchedulePost } from '../lib/schedule-post.js';
+import { killAlert } from '../lib/boss-alerts.js';
 
 const APP_URL = 'https://anomaly-surround.github.io/guild-manager/';
 
@@ -81,6 +82,7 @@ async function cmdKilled(env, interaction, after) {
   const deathTime = Date.now() - minutesAgo * 60000;
   const { nextSpawn, day } = await killBoss(env, { teamId: team.id, boss, deathTime, userId: m.user_id, tz: team.timezone });
   after(() => refreshSchedulePost(env, team.id, { touchedDay: day }));
+  after(() => killAlert(env, { teamId: team.id, boss, by: who.name, at: deathTime, nextSpawn }));
   const when = minutesAgo ? ` (${minutesAgo} min ago)` : '';
   return `☠️ **${boss.name}** killed by ${who.name}${when}. Next spawn in ${fmtDuration(nextSpawn - Date.now())} (${clockIn(nextSpawn, team.timezone || 'Asia/Manila')}).${footer(team)}`;
 }

@@ -1,4 +1,5 @@
-// Discord webhook validation + embed sender
+// Discord webhook validation, embed sender, and post/edit of webhook messages we keep updating
+// (daily schedule post, boss alerts).
 
 export function isValidDiscordWebhook(url) {
   try {
@@ -22,4 +23,19 @@ export async function sendDiscord(webhookUrl, title, description, color) {
       }),
     });
   } catch (e) { /* ignore */ }
+}
+
+// -> { ok, id?, status }. DISCORD_API (local harness only) swaps the host for the mock Discord.
+export async function webhookCall(env, hook, method, msgId, body) {
+  const base = env.DISCORD_API ? hook.replace(/^https:\/\/(discord|discordapp)\.com\/api/, env.DISCORD_API) : hook;
+  const url = msgId ? `${base}/messages/${msgId}` : `${base}?wait=true`;
+  try {
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) { console.error('discord webhook', method, r.status, (await r.text().catch(() => '')).slice(0, 200)); return { ok: false, status: r.status }; }
+    const d = method === 'POST' ? await r.json().catch(() => ({})) : {};
+    return { ok: true, id: d.id, status: r.status };
+  } catch (e) {
+    console.error('discord webhook failed:', e);
+    return { ok: false, status: 0 };
+  }
 }

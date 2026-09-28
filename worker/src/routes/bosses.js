@@ -8,6 +8,7 @@ import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { limitsFor } from '../lib/limits.js';
 import { PRESETS, findPreset } from '../presets/index.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
+import { killAlert } from '../lib/boss-alerts.js';
 import { parseGroups } from '../lib/spawn-groups.js';
 
 // Is the rule in this edit body the one the boss already has? Resending it (an older client, or a
@@ -81,8 +82,10 @@ export const routes = [
     if (!boss) return json({ error: 'Boss not found' }, 404);
 
     const settings = await env.DB.prepare('SELECT timezone FROM team_settings WHERE team_id = ?').bind(teamId).first();
-    const { day } = await killBoss(env, { teamId, boss, deathTime, userId: user.userId, tz: settings?.timezone || 'Asia/Manila' });
+    const { day, nextSpawn } = await killBoss(env, { teamId, boss, deathTime, userId: user.userId, tz: settings?.timezone || 'Asia/Manila' });
     queueScheduleRefresh(ctx, env, teamId, { touchedDay: day });
+    const alert = killAlert(env, { teamId, boss, by: user.username, at: deathTime, nextSpawn }).catch(e => console.error('kill alert failed:', e));
+    if (ctx?.waitUntil) ctx.waitUntil(alert);
 
     return json({ ok: true });
   } },
@@ -132,7 +135,7 @@ export const routes = [
       else if (type === 'biweekly') nextSpawn = getNextBiweeklySpawn(days, tz);
       else if (type === 'twicedaily') nextSpawn = getNextTwiceDailySpawn(days, tz);
       else return json({ error: 'Invalid type' }, 400);
-      sets.push('type = ?', 'interval_ms = ?', 'fixed_time = ?', 'weekly_day = ?', 'weekly_time = ?', 'biweekly_days = ?', 'next_spawn = ?', "status = 'waiting'", 'spawned_at = NULL', 'auto_reset_at = NULL', 'warned = 0', 'spawn_notified = 0');
+      sets.push('type = ?', 'interval_ms = ?', 'fixed_time = ?', 'weekly_day = ?', 'weekly_time = ?', 'biweekly_days = ?', 'next_spawn = ?', "status = 'waiting'", 'spawned_at = NULL', 'auto_reset_at = NULL', 'warned = 0', 'spawn_notified = 0', 'alert_soon_msg = NULL', 'alert_spawn_msg = NULL');
       vals.push(type, type === 'interval' ? intervalMs : null, type === 'fixed' ? fixedTime : null, type === 'weekly' ? weeklyDay : null, type === 'weekly' ? weeklyTime : null, (type === 'biweekly' || type === 'twicedaily') ? days : null, nextSpawn);
     }
     if (sets.length === 0) return json({ ok: true });

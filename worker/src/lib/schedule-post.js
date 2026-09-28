@@ -4,7 +4,7 @@
 // message, schedule_prev_day + schedule_prev_msg_id for yesterday's); finished spawns are
 // recorded in schedule_spawns so the day's post can keep them, crossed out.
 
-import { isValidDiscordWebhook } from './discord.js';
+import { isValidDiscordWebhook, webhookCall } from './discord.js';
 import { dayKey, dayLabel, dayScheduleText } from './schedule-format.js';
 import { parseGroups } from './spawn-groups.js';
 
@@ -40,20 +40,6 @@ function payload(teamName, day, text, tz) {
   };
 }
 
-// -> { ok, id?, status }. DISCORD_API (local harness only) swaps the host for the mock Discord.
-async function webhookCall(env, hook, method, msgId, body) {
-  const base = env.DISCORD_API ? hook.replace(/^https:\/\/(discord|discordapp)\.com\/api/, env.DISCORD_API) : hook;
-  const url = msgId ? `${base}/messages/${msgId}` : `${base}?wait=true`;
-  try {
-    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) { console.error('schedule post', method, r.status, (await r.text().catch(() => '')).slice(0, 200)); return { ok: false, status: r.status }; }
-    const d = method === 'POST' ? await r.json().catch(() => ({})) : {};
-    return { ok: true, id: d.id, status: r.status };
-  } catch (e) {
-    console.error('schedule post failed:', e);
-    return { ok: false, status: 0 };
-  }
-}
 // 4xx other than 429 = the webhook or message is gone/invalid; anything else is worth retrying.
 const permanent = (status) => status >= 400 && status < 500 && status !== 429;
 
