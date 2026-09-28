@@ -31,3 +31,10 @@
 /* slash-command setup steps */
 .s-steps { display: flex; flex-direction: column; }
 .s-steps code { font-family: var(--mono); background: var(--surface-2); padding: 1px 6px; border-radius: 4px; font-size: 0.85em; }
+
+/* spawn groups editor (schedule-settings.js) */
+.sg-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.sg-list:empty { display: none; }
+.sg-row { display: flex; gap: 8px; align-items: center; }
+.sg-row .sg-name, .sg-row .sg-role { flex: 1 1 140px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font-size: 0.9rem; }
+.sg-row .sg-name:focus, .sg-row .sg-role:focus { outline: none; border-color: var(--accent); }

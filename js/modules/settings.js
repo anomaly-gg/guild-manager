@@ -1,8 +1,9 @@
-// Settings module: team info, invites, modules + loot mode, Discord alerts, events, points,
+// Settings module: team info, invites, modules + loot mode, Discord alerts, schedule post (schedule-settings.js), events, points,
 // public timer page, team icon, leadership. ES module; uses shell globals by name. window.Settings.
 // Only fields the worker actually consumes are shown here — if a setting has no consumer, it is cut.
 
 import { esc } from './timer-cards.js?v=20260923e';
+import * as ScheduleCard from './schedule-settings.js?v=20260929a';
 
 const TIMEZONES = ['Asia/Manila', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Australia/Sydney', 'Pacific/Auckland'];
 
@@ -41,10 +42,11 @@ function render() {
     const el = root();
     if (!el) return;
     el.innerHTML = canManage()
-        ? `<div class="settings">${teamCard()}${invitesCard()}${modulesCard()}${discordCard()}${slashCard()}${attendanceCard()}${eventsCard()}${team()?.loot_mode === 'dkp' ? pointsCard() : ''}${publicCard()}${iconCard()}${leadershipCard()}</div>`
+        ? `<div class="settings">${teamCard()}${invitesCard()}${modulesCard()}${discordCard()}${ScheduleCard.cardHtml(settings)}${slashCard()}${attendanceCard()}${eventsCard()}${team()?.loot_mode === 'dkp' ? pointsCard() : ''}${publicCard()}${iconCard()}${leadershipCard()}</div>`
         : `<div class="settings"><section class="card s-card"><h3>Settings</h3><p class="s-desc">Only officers and the leader can change team settings. Ask them if something needs adjusting.</p></section>${leaveCard()}</div>`;
     el.onclick = onClick;
     el.onchange = onChange;
+    if (canManage()) ScheduleCard.mount($('sScheduleCard'), settings, { put, reload });
 }
 
 const toggle = (id, label, checked, { auto, help, disabled } = {}) => `

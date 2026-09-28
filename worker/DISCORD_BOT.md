@@ -15,9 +15,21 @@ worker itself never needs it — only `scripts/register-commands.mjs` does.
 | `/rollcall <boss> <@members…> [boss2] [note]` | leader/officer | logs everyone mentioned as attended, approved immediately, points awarded |
 | `/next [count]` | **anyone** in the linked server | next spawns, up-now first, team time, with a link to the timer page / app |
 | `/killed <boss> [minutes_ago]` | team members only | logs the kill and restarts the timer; boss name autocompletes; ambiguous names ask "which one?" |
+| `/assign <boss> <group>` | leader/officer | tags the boss's next spawn with a spawn group (Settings → Daily schedule post); "No group" clears it; cleared automatically when that spawn is killed or auto-resets |
 
 `/next` is deliberately open: it is the discovery surface (every reply carries the Guild Manager
 link). `/killed` is not, because a stranger in a public server could reset a guild's timers.
+
+## Daily schedule post (`lib/schedule-post.js`, `lib/schedule-format.js`)
+
+Not a slash command: a webhook message. With Settings → Daily schedule post → webhook set, the
+cron posts one embed per team-clock day at 00:00 and edits that same message (never a new one)
+when a spawn comes up (🔴 UP), is killed (`~~line~~ — dead`), auto-resets (`— auto-reset`), or a
+timer/group changes. Finished spawns are kept in `schedule_spawns` (pruned after 3 days) so the
+day's post keeps them crossed out. A kill after midnight of last night's spawn also edits
+yesterday's message. If someone deletes the message, the next change posts a fresh one; if
+Discord fails at midnight, the next cron minute retries. Role mentions render coloured but never
+ping (`allowed_mentions: { parse: [] }`).
 
 ## One-time setup (portal + terminal)
 

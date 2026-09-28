@@ -40,6 +40,13 @@
 
 .tcard-body { grid-area: body; min-width: 0; }
 .tcard-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* the boss name wins the space; the group picker shrinks first */
+.tcard-top .tcard-name { flex-shrink: 0; max-width: 70%; }
+.tcard-group { margin-left: auto; flex-shrink: 1; min-width: 64px; field-sizing: content; max-width: 60%; padding: 2px 6px; font-size: 0.75rem; font-weight: 600; border: 1px dashed var(--border-strong); border-radius: 999px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.tcard-group:not(.is-set) { opacity: 0.7; }
+.tcard-group:not(.is-set):hover, .tcard-group:focus { opacity: 1; }
+.tcard-group.is-set { border-style: solid; border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
+.tcard-group-tag { margin-left: auto; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcard-name { margin: 0; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcard-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcard-sub { display: none; }

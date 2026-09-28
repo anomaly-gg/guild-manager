@@ -2,6 +2,7 @@
 // Modules: Home · Timers · Events · Roster · Loot & Points · Settings (see OVERHAUL.md).
 
 let teamBosses = [];
+let teamSpawnGroups = [];   // officer-defined spawn groups; arrive with GET /bosses
 let teamData = null;
 let teamTab = 'home';
 let bossViewMode = localStorage.getItem('gm_boss_view') || 'list';
@@ -66,12 +67,14 @@ async function openTeam(teamId) {
     teamData = data;
     teamTab = 'home';
     teamBosses = bossesData.bosses || [];
+    teamSpawnGroups = bossesData.groups || [];
     loadAndRenderHome();
 }
 
 async function loadTeamBosses(teamId) {
     const data = await api('GET', `/api/teams/${teamId}/bosses`);
     teamBosses = data.bosses || [];
+    teamSpawnGroups = data.groups || [];
 }
 
 function renderTeamView() {

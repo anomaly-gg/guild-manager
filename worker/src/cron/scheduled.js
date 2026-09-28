@@ -1,8 +1,9 @@
-// Cron tick (every minute): boss timers, event notifications, recurring events, DKP decay, auctions, cleanup, license recheck
+// Cron tick (every minute): boss timers, daily schedule posts, event notifications, recurring events, DKP decay, auctions, cleanup, license recheck
 
 import { sendDiscord } from '../lib/discord.js';
 import { calcNextSpawn } from '../lib/spawn.js';
 import { recheckLicenses } from '../lib/gumroad.js';
+import { spawnEndStmt, cronScheduleRefresh } from '../lib/schedule-post.js';
 
 export async function handleScheduled(env) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
@@ -13,6 +14,7 @@ export async function handleScheduled(env) {
 
   const dbWrites = [];
   const discordSends = [];
+  const scheduleTouched = new Map();   // teamId -> day of a spawn that ended this tick (or null)
 
   // --- BOSSES: merge 'waiting' (warn/spawn) + 'spawned' (auto-reset) into one
   //     query with team_settings JOINed, eliminating per-boss N+1 settings lookups. ---
@@ -53,12 +55,15 @@ export async function handleScheduled(env) {
             }
             dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = ?, auto_reset_at = ?, spawn_notified = 1 WHERE id = ?')
               .bind('spawned', now, now + resetMs, boss.id));
+            if (!scheduleTouched.has(boss.team_id)) scheduleTouched.set(boss.team_id, null);
           }
         } else if (boss.status === 'spawned' && boss.auto_reset_at != null && boss.auto_reset_at <= now) {
           const tz = boss.timezone || 'Asia/Manila';
           const nextSpawn = calcNextSpawn(boss, now, tz);
-          dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0, next_spawn = ? WHERE id = ?')
-            .bind('waiting', nextSpawn, boss.id));
+          const ended = spawnEndStmt(env, { teamId: boss.team_id, boss, outcome: 'reset', endedAt: now, tz });
+          dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0, spawn_group = NULL, next_spawn = ? WHERE id = ?')
+            .bind('waiting', nextSpawn, boss.id), ended.stmt);
+          scheduleTouched.set(boss.team_id, ended.day);
           if (boss.on_spawn && bossHook) {
             discordSends.push(sendDiscord(bossHook, `${boss.name} - Auto Reset`,
               `**${boss.name}** was not killed in time and has been reset.\nNext spawn recalculated.`, 9807270));
@@ -142,6 +147,11 @@ export async function handleScheduled(env) {
     await Promise.allSettled(discordSends);
     discordSends.length = 0;
   }
+
+  // --- Daily schedule posts: new day at 00:00 team time, edits for bosses that changed above. ---
+  try {
+    await cronScheduleRefresh(env, scheduleTouched);
+  } catch (e) { console.error('Schedule post error:', e); }
 
   // --- Recurring event auto-create. ---
   try {

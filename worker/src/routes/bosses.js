@@ -7,6 +7,8 @@ import { killBoss } from '../lib/boss-kill.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { limitsFor } from '../lib/limits.js';
 import { PRESETS, findPreset } from '../presets/index.js';
+import { queueScheduleRefresh } from '../lib/schedule-post.js';
+import { parseGroups } from '../lib/spawn-groups.js';
 
 export const routes = [
   // GET /api/teams/:id/bosses
@@ -15,13 +17,16 @@ export const routes = [
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member) return json({ error: 'Not a member' }, 403);
 
-    const bosses = await env.DB.prepare('SELECT * FROM bosses WHERE team_id = ? ORDER BY next_spawn ASC')
-      .bind(teamId).all();
-    return json({ bosses: bosses.results });
+    // Spawn groups ride along (one batch = one round trip) so timer rows can show and assign them.
+    const [bosses, settings] = await env.DB.batch([
+      env.DB.prepare('SELECT * FROM bosses WHERE team_id = ? ORDER BY next_spawn ASC').bind(teamId),
+      env.DB.prepare('SELECT spawn_groups FROM team_settings WHERE team_id = ?').bind(teamId),
+    ]);
+    return json({ bosses: bosses.results, groups: parseGroups(settings.results[0]?.spawn_groups) });
   } },
 
   // POST /api/teams/:id/bosses — add boss
-  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses$/, handler: async ({ request, env, user, params }) => {
+  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses$/, handler: async ({ request, env, ctx, user, params }) => {
     const teamId = params[1];
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member) return json({ error: 'Not a member' }, 403);
@@ -45,12 +50,13 @@ export const routes = [
 
     const { id, stmt } = bossInsertStmt(env, teamId, body, tz);
     await stmt.run();
+    queueScheduleRefresh(ctx, env, teamId);
 
     return json({ ok: true, id });
   } },
 
   // POST /api/teams/:id/bosses/:bossId/kill
-  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)\/kill$/, handler: async ({ request, env, user, params }) => {
+  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)\/kill$/, handler: async ({ request, env, ctx, user, params }) => {
     const [, teamId, bossId] = params;
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member) return json({ error: 'Not a member' }, 403);
@@ -63,13 +69,14 @@ export const routes = [
     if (!boss) return json({ error: 'Boss not found' }, 404);
 
     const settings = await env.DB.prepare('SELECT timezone FROM team_settings WHERE team_id = ?').bind(teamId).first();
-    await killBoss(env, { teamId, boss, deathTime, userId: user.userId, tz: settings?.timezone || 'Asia/Manila' });
+    const { day } = await killBoss(env, { teamId, boss, deathTime, userId: user.userId, tz: settings?.timezone || 'Asia/Manila' });
+    queueScheduleRefresh(ctx, env, teamId, { touchedDay: day });
 
     return json({ ok: true });
   } },
 
   // PUT /api/teams/:id/bosses/:bossId — edit a boss (officers+). Schedule changes recompute next_spawn.
-  { method: 'PUT', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)$/, handler: async ({ request, env, user, params }) => {
+  { method: 'PUT', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)$/, handler: async ({ request, env, ctx, user, params }) => {
     const [, teamId, bossId] = params;
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
@@ -118,16 +125,37 @@ export const routes = [
     if (sets.length === 0) return json({ ok: true });
     vals.push(bossId);
     await env.DB.prepare(`UPDATE bosses SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+    queueScheduleRefresh(ctx, env, teamId);
     return json({ ok: true });
   } },
 
   // DELETE /api/teams/:id/bosses/:bossId
-  { method: 'DELETE', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)$/, handler: async ({ env, user, params }) => {
+  { method: 'DELETE', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)$/, handler: async ({ env, ctx, user, params }) => {
     const [, teamId, bossId] = params;
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
 
     await env.DB.prepare('DELETE FROM bosses WHERE id = ? AND team_id = ?').bind(bossId, teamId).run();
+    queueScheduleRefresh(ctx, env, teamId);
+    return json({ ok: true });
+  } },
+
+  // PUT /api/teams/:id/bosses/:bossId/group { groupId | null } — tag the boss's NEXT spawn with a
+  // spawn group (officers+). Cleared automatically when that spawn is killed or auto-resets.
+  { method: 'PUT', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)\/group$/, handler: async ({ request, env, ctx, user, params }) => {
+    const [, teamId, bossId] = params;
+    const member = await requireTeamMember(env, teamId, user.userId);
+    if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
+    const body = await safeJson(request);
+    if (!body) return json({ error: 'Invalid request body' }, 400);
+    const groupId = body.groupId ? String(body.groupId) : null;
+    if (groupId) {
+      const s = await env.DB.prepare('SELECT spawn_groups FROM team_settings WHERE team_id = ?').bind(teamId).first();
+      if (!parseGroups(s?.spawn_groups).some(g => g.id === groupId)) return json({ error: 'Unknown group' }, 400);
+    }
+    const r = await env.DB.prepare('UPDATE bosses SET spawn_group = ? WHERE id = ? AND team_id = ?').bind(groupId, bossId, teamId).run();
+    if (!r.meta?.changes) return json({ error: 'Boss not found' }, 404);
+    queueScheduleRefresh(ctx, env, teamId);
     return json({ ok: true });
   } },
 
@@ -153,7 +181,7 @@ export const routes = [
     return json({ ok: true });
   } },
 
-  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/import-template$/, handler: async ({ request, env, user, params }) => {
+  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/import-template$/, handler: async ({ request, env, ctx, user, params }) => {
     const teamId = params[1];
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
@@ -169,7 +197,7 @@ export const routes = [
     const tz = settings?.timezone || 'Asia/Manila';
 
     const stmts = bosses.filter(b => b && b.name).map(b => bossInsertStmt(env, teamId, b, tz).stmt);
-    if (stmts.length) await env.DB.batch(stmts);
+    if (stmts.length) { await env.DB.batch(stmts); queueScheduleRefresh(ctx, env, teamId); }
     return json({ ok: true, count: stmts.length });
   } },
 
@@ -180,7 +208,7 @@ export const routes = [
 
   // POST /api/teams/:id/bosses/presets { presetId, names?: [] } — add a game's bosses to the team.
   // Skips names the team already has, stops at the plan's timer cap, inserts in one batch.
-  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/presets$/, handler: async ({ request, env, user, params }) => {
+  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/presets$/, handler: async ({ request, env, ctx, user, params }) => {
     const teamId = params[1];
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
@@ -208,7 +236,7 @@ export const routes = [
       if (room <= 0) { skippedCap.push(b.name); continue; }
       stmts.push(bossInsertStmt(env, teamId, b, tz).stmt); added.push(b.name); have.add(key); room--;
     }
-    if (stmts.length) await env.DB.batch(stmts);
+    if (stmts.length) { await env.DB.batch(stmts); queueScheduleRefresh(ctx, env, teamId); }
     return json({ ok: true, added, skippedExisting, skippedCap, cap: Number.isFinite(cap) ? cap : null });
   } },
 

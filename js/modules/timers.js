@@ -3,7 +3,7 @@
 // (teamBosses, teamData, teamTab, currentTeamId, api, showToast, guard, loadTeamBosses, renderTeamView).
 // Exposed to the shell as window.Timers.
 
-import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20260923n';
+import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20260929a';
 
 let search = '';
 let tickTimer = null;
@@ -41,7 +41,8 @@ function startLoops() {
     refreshTimer = setInterval(async () => {
         if (teamTab !== 'timers' || !root()) return stopLoops();
         await loadTeamBosses(currentTeamId);
-        if (teamTab === 'timers') renderList();
+        // Re-rendering would snap shut a group picker an officer is using; skip this round.
+        if (teamTab === 'timers' && !document.activeElement?.matches?.('[data-role="group"]')) renderList();
     }, 15000);
 }
 
@@ -86,7 +87,7 @@ function listHtml() {
     }
     if (list.length === 0) return '<div class="t-empty card"><div class="t-empty-title">No bosses match “' + esc(search) + '”</div></div>';
     setDisplayTimeZone(displayTz());
-    return groupedListHtml(list, { canManage: canManage(), teamTimeNote: tzDiffers() ? 'team time' : '' });
+    return groupedListHtml(list, { canManage: canManage(), groups: teamSpawnGroups, teamTimeNote: tzDiffers() ? 'team time' : '' });
 }
 
 function render() {
@@ -118,6 +119,7 @@ function render() {
     };
     el.onchange = (e) => {
         if (e.target.dataset.role === 'importfile') importFile(e.target);
+        if (e.target.dataset.role === 'group') assignGroup(e.target);
     };
 }
 
@@ -159,6 +161,16 @@ const killBoss = guard('timers.kill', async (id) => {
     const res = await api('POST', `/api/teams/${currentTeamId}/bosses/${id}/kill`, { deathTime: Date.now() });
     if (res.error) { showToast(res.error); return; }
     await reload();
+});
+
+const assignGroup = guard('timers.group', async (sel) => {
+    const b = byId(sel.dataset.id);
+    const res = await api('PUT', `/api/teams/${currentTeamId}/bosses/${sel.dataset.id}/group`, { groupId: sel.value || null });
+    if (res.error) { showToast(res.error); await reload(); return; }
+    if (b) b.spawn_group = sel.value || null;
+    sel.classList.toggle('is-set', !!sel.value);
+    sel.blur();
+    showToast(sel.value ? `${b?.name || 'Boss'} → ${sel.selectedOptions[0].textContent}` : `${b?.name || 'Boss'}: group cleared`);
 });
 
 const deleteBoss = guard('timers.delete', async (id) => {

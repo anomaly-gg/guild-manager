@@ -105,7 +105,19 @@ function atText(boss, st) {
     return 'at ' + timeAt(boss.next_spawn);
 }
 
-// Full card. opts: { readOnly, canManage }
+// Spawn group of the boss's next spawn: a picker for officers, a tag for everyone else.
+function groupHtml(boss, opts) {
+    const groups = opts.groups || [];
+    if (!groups.length) return '';
+    const current = groups.find(g => g.id === boss.spawn_group);
+    if (opts.canManage && !opts.readOnly) {
+        return `<select class="tcard-group ${current ? 'is-set' : ''}" data-role="group" data-id="${boss.id}" title="Group for the next spawn" aria-label="Group for the next spawn">
+            <option value="">${current ? 'No group' : '+ Group'}</option>${groups.map(g => `<option value="${esc(g.id)}" ${g.id === boss.spawn_group ? 'selected' : ''}>@${esc(g.name)}</option>`).join('')}</select>`;
+    }
+    return current ? `<span class="chip chip-accent tcard-group-tag">@${esc(current.name)}</span>` : '';
+}
+
+// Full card. opts: { readOnly, canManage, groups }
 export function cardHtml(boss, opts = {}, now = Date.now()) {
     const st = bossState(boss, now);
     // Schedules are written in the team zone; say so when the viewer's clock differs (opts.teamTimeNote).
@@ -134,7 +146,7 @@ export function cardHtml(boss, opts = {}, now = Date.now()) {
                 <span class="tcard-icon">${stateIcon(st.key)}</span>
             </div>
             <div class="tcard-body">
-                <div class="tcard-top"><h4 class="tcard-name">${esc(boss.name)}</h4><span class="tcard-chip">${CHIP[st.key]}</span></div>
+                <div class="tcard-top"><h4 class="tcard-name">${esc(boss.name)}</h4><span class="tcard-chip">${CHIP[st.key]}</span>${groupHtml(boss, opts)}</div>
                 <div class="tcard-meta">${meta}${windowNote}</div>
                 <div class="tcard-sub">${sub}</div>
             </div>

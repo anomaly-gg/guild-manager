@@ -7,7 +7,9 @@ import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { parseRoles } from './events.js';
 import { lootModeFor } from '../lib/rotation.js';
 import { createToken } from '../lib/auth.js';
-import { guildName } from '../lib/discord-interactions.js';
+import { guildName, guildRoles } from '../lib/discord-interactions.js';
+import { parseGroups, cleanGroups } from '../lib/spawn-groups.js';
+import { queueScheduleRefresh } from '../lib/schedule-post.js';
 
 // Linked servers for Settings; rows linked before names were fetched get their name filled in here.
 async function linkedGuildsWithNames(env, teamId) {
@@ -36,6 +38,16 @@ export const routes = [
     return json({ url: `https://discord.com/oauth2/authorize?${q}` });
   } },
 
+  // GET /api/teams/:id/discord-roles — roles of every linked server, for tagging spawn groups (officers+)
+  { method: 'GET', pattern: /^\/api\/teams\/([^/]+)\/discord-roles$/, handler: async ({ env, user, params }) => {
+    const teamId = params[1];
+    const member = await requireTeamMember(env, teamId, user.userId);
+    if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
+    const guilds = (await env.DB.prepare('SELECT guild_id, guild_name FROM discord_guilds WHERE team_id = ? ORDER BY linked_at').bind(teamId).all()).results;
+    const lists = await Promise.all(guilds.map(g => guildRoles(env, g.guild_id)));
+    return json({ servers: guilds.map((g, i) => ({ guildId: g.guild_id, name: g.guild_name, roles: lists[i] })) });
+  } },
+
   // GET /api/teams/:id/settings
   { method: 'GET', pattern: /^\/api\/teams\/([^/]+)\/settings$/, handler: async ({ env, user, params }) => {
     const teamId = params[1];
@@ -58,6 +70,8 @@ export const routes = [
       // Premium settings — only return "set" flags, never leak the URL (even partially)
       webhookBossSet: !!settings?.webhook_boss,
       webhookEventsSet: !!settings?.webhook_events,
+      webhookScheduleSet: !!settings?.webhook_schedule,
+      spawnGroups: parseGroups(settings?.spawn_groups),
       dkpDecayEnabled: !!(settings?.dkp_decay_enabled),
       dkpDecayPercent: settings?.dkp_decay_percent ?? 10,
       dkpDecayInactiveDays: settings?.dkp_decay_inactive_days ?? 14,
@@ -77,7 +91,7 @@ export const routes = [
   } },
 
   // PUT /api/teams/:id/settings
-  { method: 'PUT', pattern: /^\/api\/teams\/([^/]+)\/settings$/, handler: async ({ request, env, user, params }) => {
+  { method: 'PUT', pattern: /^\/api\/teams\/([^/]+)\/settings$/, handler: async ({ request, env, ctx, user, params }) => {
     const teamId = params[1];
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member || (member.role !== 'leader' && member.role !== 'officer')) {
@@ -100,6 +114,17 @@ export const routes = [
       if (body.webhookUrl !== undefined) {
         if (body.webhookUrl && !isValidDiscordWebhook(body.webhookUrl)) return json({ error: 'Webhook must be a Discord webhook URL (https://discord.com/api/webhooks/...)' }, 400);
         sets.push('webhook_url = ?'); vals.push(body.webhookUrl || null);
+      }
+      // Daily schedule post: a new/removed webhook starts over (the next refresh posts today's message there).
+      if (body.webhookSchedule !== undefined) {
+        if (body.webhookSchedule && !isValidDiscordWebhook(body.webhookSchedule)) return json({ error: 'Webhook must be a Discord webhook URL (https://discord.com/api/webhooks/...)' }, 400);
+        sets.push('webhook_schedule = ?', 'schedule_day = NULL', 'schedule_msg_id = NULL', 'schedule_prev_day = NULL', 'schedule_prev_msg_id = NULL');
+        vals.push(body.webhookSchedule || null);
+      }
+      if (body.spawnGroups !== undefined) {
+        const groups = cleanGroups(body.spawnGroups);
+        if (typeof groups === 'string') return json({ error: groups }, 400);
+        sets.push('spawn_groups = ?'); vals.push(groups.length ? JSON.stringify(groups) : null);
       }
       if (body.unlinkDiscordGuild) await env.DB.prepare('DELETE FROM discord_guilds WHERE guild_id = ? AND team_id = ?').bind(String(body.unlinkDiscordGuild), teamId).run();   // linking happens via Add to Discord or /link
       if (body.onWarning !== undefined) { sets.push('on_warning = ?'); vals.push(body.onWarning ? 1 : 0); }
@@ -166,6 +191,7 @@ export const routes = [
       if (sets.length > 0) {
         vals.push(teamId);
         await env.DB.prepare(`UPDATE team_settings SET ${sets.join(', ')} WHERE team_id = ?`).bind(...vals).run();
+        if (body.webhookSchedule || body.spawnGroups !== undefined || body.timezone !== undefined) queueScheduleRefresh(ctx, env, teamId);
       }
     }
 

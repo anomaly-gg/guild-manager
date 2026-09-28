@@ -19,6 +19,11 @@ const commands = [
       { type: 3, name: 'boss', description: 'Boss name', required: true, autocomplete: true },
       { type: 4, name: 'minutes_ago', description: 'How many minutes ago it died (default 0)', min_value: 0, max_value: 1440 },
     ] },
+  { name: 'assign', description: 'Hand a boss\'s next spawn to a group (leader or officer)',
+    options: [
+      { type: 3, name: 'boss', description: 'Boss name', required: true, autocomplete: true },
+      { type: 3, name: 'group', description: 'Group, or "No group" to clear', required: true, autocomplete: true },
+    ] },
   { name: 'here', description: 'Check in to a rally with a screenshot (team members)',
     options: [
       { type: 3, name: 'boss', description: 'Boss you rallied for', required: true, autocomplete: true },
