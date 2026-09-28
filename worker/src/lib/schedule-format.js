@@ -1,9 +1,10 @@
 // Boss schedule text for Discord, in the guild schedule-post style:
 //   `2:04 AM ` | Lady Dalia | @Kongreso
 // Used by /next (day headers, upcoming only) and the daily schedule post (one day, with finished
-// spawns crossed out). Pure formatting: no DB, no network.
+// spawns crossed out). No DB, no network.
 
 import { groupTag } from './spawn-groups.js';
+import { spawnsInWindow } from './spawn-projection.js';
 
 // Intl formatters are costly to build; the cron renders every linked team each minute, so cache per zone.
 const fmtCache = new Map();
@@ -88,15 +89,19 @@ export function scheduleLines(rows, tz, { headers = false } = {}) {
   return out;
 }
 
-const liveRow = (b, now, groups) => {
-  const st = bossState(b, now);
-  return { at: b.next_spawn, name: b.name, location: b.location, tag: groupTag(groups, b.spawn_group), state: st.key, windowLeft: st.windowLeft };
-};
+// Rows for one boss: its live next spawn (with up/window state) and, inside [from, until), the
+// spawns projected after it, each with its own group.
+function bossRows(b, now, from, until, tz, groups) {
+  return spawnsInWindow(b, from, until, tz, groups).map(sp => {
+    const st = sp.index === 0 ? bossState(b, now) : { key: 'waiting' };
+    return { at: sp.at, index: sp.index, name: b.name, location: b.location, tag: groupTag(groups, sp.groupId), state: st.key, windowLeft: st.windowLeft };
+  });
+}
 
-// /next: up-now bosses first, then soonest, under day headers in the team clock.
+// /next: up-now bosses first, then every spawn in the next 24 h, soonest first, under day headers.
 export function nextSpawnsText(bosses, tz, now = Date.now(), limit = 10, groups = []) {
   const rank = { spawned: 0, window: 0, waiting: 1 };
-  const rows = bosses.map(b => liveRow(b, now, groups))
+  const rows = bosses.flatMap(b => bossRows(b, now, now, now + 86400000, tz, groups))
     .sort((x, y) => (rank[x.state] - rank[y.state]) || (x.at - y.at))
     .slice(0, limit)
     .map(r => r.state === 'waiting' ? r : { ...r, header: 'Up now' });
@@ -104,13 +109,30 @@ export function nextSpawnsText(bosses, tz, now = Date.now(), limit = 10, groups 
   return scheduleLines(rows, tz, { headers: true }).join('\n');
 }
 
-// Daily post body for calendar day `day` (dayKey): finished spawns recorded that day + live bosses
-// spawning that day (plus, on today's post, anything up right now), in time order.
+// 00:00 of a YYYY-MM-DD day in the team zone, as epoch ms.
+export function dayStart(key, tz) {
+  const [y, m, d] = key.split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d);
+  const offset = (ts) => {
+    const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })
+      .formatToParts(new Date(ts)).reduce((a, x) => (a[x.type] = x.value, a), {});
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute) - ts;
+  };
+  const first = guess - offset(guess);
+  return guess - offset(first);
+}
+
+// Daily post body for calendar day `day` (dayKey): finished spawns recorded that day + every spawn
+// still to come that day (repeat spawns of short-timer bosses included), plus, on today's post,
+// anything up right now; in time order.
 export function dayScheduleText(day, bosses, ended, tz, now = Date.now(), groups = []) {
   const today = day === dayKey(now, tz);
+  const from = dayStart(day, tz), until = from + 86400000 + 3600000;   // +1 h absorbs a DST day; dayKey below decides
+  const live = bosses.flatMap(b => bossRows(b, now, from, until, tz, groups))
+    .filter(r => dayKey(r.at, tz) === day || (today && r.index === 0 && r.state !== 'waiting'));
   const rows = [
     ...ended.map(e => ({ at: e.spawn_at, name: e.boss_name, location: e.location, tag: groupTag(groups, e.group_id), state: e.outcome })),
-    ...bosses.filter(b => dayKey(b.next_spawn, tz) === day || (today && bossState(b, now).key !== 'waiting')).map(b => liveRow(b, now, groups)),
+    ...live,
   ].sort((x, y) => x.at - y.at);
   if (!rows.length) return 'No spawns on the schedule for this day.';
   return scheduleLines(rows, tz).join('\n');

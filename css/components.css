@@ -109,6 +109,8 @@
     font-size: 0.95rem;
 }
 .tform input:focus, .tform select:focus, .tform textarea:focus { outline: none; border-color: var(--accent); }
+/* checkboxes/radios keep their own size inside a form grid (e.g. a toggle row) */
+.tform input[type="checkbox"], .tform input[type="radio"] { width: auto; padding: 0; }
 .tform textarea { font: inherit; font-size: 0.95rem; resize: vertical; }
 .tf-inline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tf-inline input[type="number"] { width: 72px; }

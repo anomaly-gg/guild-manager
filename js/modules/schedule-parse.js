@@ -114,10 +114,10 @@ export function matchName(name, candidates, nameOf = (c) => c.name) {
     return best && bestD <= limit ? { item: best, exact: false } : null;
 }
 
-// Parsed rows -> review plan. One timer holds one upcoming spawn, so per boss the earliest time that
-// is not past is used; the boss's other lines are shown but not applied.
+// Parsed rows -> review plan. A timer holds its next spawn, so per boss the earliest time that is
+// not past sets it; the boss's later lines ("later") hand their groups to the 2nd, 3rd... spawn.
 //   bosses: team timers [{ id, name, ... }], presets: [{ name, type, intervalMs, ... }], groups: [{ id, name }]
-// -> [{ row, at, action: 'update'|'add'|'skip', reason?, boss?, preset?, group?, groupUnknown?, checked }]
+// -> [{ row, at, action: 'update'|'add'|'later'|'skip', reason?, boss?, preset?, group?, groupUnknown?, checked, key }]
 export function buildPlan(rows, { bosses, presets, groups, tz, now = Date.now(), graceMs = 10 * 60000 }) {
     const plan = rows.map(row => {
         const at = rowTime(row, tz, now, graceMs);
@@ -130,13 +130,19 @@ export function buildPlan(rows, { bosses, presets, groups, tz, now = Date.now(),
         if (at < now - graceMs) return { ...item, action: 'skip', reason: 'already past', checked: false };
         return { ...item, action: item.boss ? 'update' : 'add', checked: true };
     });
-    // one upcoming spawn per boss: keep the earliest, mark the rest
+    // per boss: the earliest upcoming line sets the timer; the ones after it are its later spawns
     const firstAt = new Map();
     for (const p of plan) if (p.action !== 'skip' && (!firstAt.has(p.key) || p.at < firstAt.get(p.key))) firstAt.set(p.key, p.at);
     for (const p of plan) {
-        if (p.action !== 'skip' && p.at !== firstAt.get(p.key)) Object.assign(p, { action: 'skip', reason: 'later spawn of the same boss', checked: false });
+        if (p.action !== 'skip' && p.at !== firstAt.get(p.key)) Object.assign(p, { action: 'later', reason: 'later spawn: sets its group' });
     }
     // a brand-new boss with no preset needs its respawn time from the officer
     for (const p of plan) if (p.action === 'add' && !p.preset) p.needsRule = true;
     return plan;
+}
+
+// Groups of a boss's later lines, in time order, for the import request (up to 3).
+export function laterGroupsFor(plan, first) {
+    return plan.filter(p => p !== first && p.key === first.key && p.action === 'later' && p.checked)
+        .sort((a, b) => a.at - b.at).slice(0, 3).map(p => p.group?.id || null);
 }

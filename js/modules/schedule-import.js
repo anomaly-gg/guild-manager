@@ -4,8 +4,8 @@
 // (worker routes/schedule-import.js). ES module; uses shell globals by name
 // (api, showToast, guard, currentTeamId, teamBosses, teamSpawnGroups, teamTz, teamTimeStr).
 
-import { esc } from './timer-cards.js?v=20260929b';
-import { parseScheduleText, buildPlan } from './schedule-parse.js?v=20260929a';
+import { esc } from './timer-cards.js?v=20260929c';
+import { parseScheduleText, buildPlan, laterGroupsFor } from './schedule-parse.js?v=20260929b';
 
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 let workerPromise = null;   // one OCR worker per page load; the language data downloads once
@@ -104,7 +104,7 @@ const read = guard('import.read', async (file) => {
 
 // ---------------------------------------------------------------- review
 
-const ACTION = { update: ['Update', 'chip-accent'], add: ['Add', 'chip-success'], skip: ['Skip', 'chip-muted'] };
+const ACTION = { update: ['Update', 'chip-accent'], add: ['Add', 'chip-success'], later: ['Later', 'chip-muted'], skip: ['Skip', 'chip-muted'] };
 
 function targetOptions(p) {
     const addLabel = `New: ${p.preset ? p.preset.name : p.row.name}`;
@@ -142,7 +142,7 @@ function renderReview(rawText) {
         return;
     }
     el.innerHTML = `<div class="si-list">${plan.map(rowHtml).join('')}</div>
-        <p class="tf-help">Times are team time (${esc(teamTz())}). A timer holds one upcoming spawn, so for a boss listed twice the next one is used. Untick anything that looks wrong.</p>
+        <p class="tf-help">Times are team time (${esc(teamTz())}). A boss listed more than once: its first upcoming line sets the timer, the later lines set the groups of its following spawns. Untick anything that looks wrong.</p>
         <details class="si-raw"><summary>What was read</summary><pre>${esc(rawText)}</pre></details>`;
     updateApply();
 }
@@ -156,7 +156,7 @@ function refreshRow(i) {
     updateApply();
 }
 
-function applicable(p) { return p.checked && p.action !== 'skip' && (p.boss || p.preset || p.ruleHours > 0); }
+function applicable(p) { return p.checked && (p.action === 'update' || p.action === 'add') && (p.boss || p.preset || p.ruleHours > 0); }
 
 function updateApply() {
     const n = plan.filter(applicable).length;
@@ -195,7 +195,8 @@ function onClick(e) {
 
 const apply = guard('import.apply', async () => {
     const items = plan.filter(applicable).map(p => {
-        const it = { nextSpawn: p.at, groupId: p.group?.id || null };
+        const later = laterGroupsFor(plan, p);
+        const it = { nextSpawn: p.at, groupId: p.group?.id || null, ...(later.some(Boolean) ? { laterGroups: later } : {}) };
         if (p.boss) it.bossId = p.boss.id;
         else if (p.preset) it.add = { ...p.preset, name: p.preset.name };
         else it.add = { name: p.row.name, type: 'interval', intervalMs: Math.round(p.ruleHours * 3600000) };

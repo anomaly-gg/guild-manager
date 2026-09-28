@@ -105,16 +105,19 @@ function atText(boss, st) {
     return 'at ' + timeAt(boss.next_spawn);
 }
 
-// Spawn group of the boss's next spawn: a picker for officers, a tag for everyone else.
+// Spawn group of the boss's next spawn. Officers get a chip that opens the groups dialog
+// (next / 2nd / 3rd spawn + alternate); "+N" = later spawns picked, "⇄" = alternates.
 function groupHtml(boss, opts) {
     const groups = opts.groups || [];
     if (!groups.length) return '';
     const current = groups.find(g => g.id === boss.spawn_group);
+    let later = 0;
+    try { later = (JSON.parse(boss.later_groups || '[]') || []).filter(Boolean).length; } catch { /* bad json = none */ }
+    const extra = `${later ? ` +${later}` : ''}${boss.alternate_groups ? ' ⇄' : ''}`;
     if (opts.canManage && !opts.readOnly) {
-        return `<select class="tcard-group ${current ? 'is-set' : ''}" data-role="group" data-id="${boss.id}" title="Group for the next spawn" aria-label="Group for the next spawn">
-            <option value="">${current ? 'No group' : '+ Group'}</option>${groups.map(g => `<option value="${esc(g.id)}" ${g.id === boss.spawn_group ? 'selected' : ''}>@${esc(g.name)}</option>`).join('')}</select>`;
+        return `<button type="button" class="tcard-group ${current ? 'is-set' : ''}" data-action="groups" data-id="${boss.id}" title="Groups for the coming spawns">${current ? '@' + esc(current.name) : '+ Group'}${extra}</button>`;
     }
-    return current ? `<span class="chip chip-accent tcard-group-tag">@${esc(current.name)}</span>` : '';
+    return current || extra ? `<span class="chip chip-accent tcard-group-tag">${current ? '@' + esc(current.name) : ''}${extra}</span>` : '';
 }
 
 // Full card. opts: { readOnly, canManage, groups }

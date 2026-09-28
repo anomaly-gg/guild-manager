@@ -240,7 +240,7 @@ async function initDB(db) {
     ['team_settings', 'rsvp_roles'], ['team_settings', 'points_name'], ['users', 'gumroad_license'],
     ['team_settings', 'discord_guild_id'], ['discord_guilds', null], ['attendance_claims', null], ['team_settings', 'attendance_self_checkin'],
     ['schedule_spawns', null], ['team_settings', 'spawn_groups'], ['bosses', 'spawn_group'], ['app_state', null],
-    ['discord_cleanup', null], ['team_settings', 'discord_delete_next_min'], ['bosses', 'alert_spawn_msg'],
+    ['discord_cleanup', null], ['team_settings', 'discord_delete_next_min'], ['bosses', 'alert_spawn_msg'], ['bosses', 'alternate_groups'],
   ];
   const tables = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'").all();
   const createSql = Object.fromEntries(tables.results.map(t => [t.name, t.sql || '']));
@@ -368,6 +368,9 @@ async function initDB(db) {
       // boss alerts edited in place (lib/boss-alerts.js)
       'ALTER TABLE bosses ADD COLUMN alert_soon_msg TEXT',
       'ALTER TABLE bosses ADD COLUMN alert_spawn_msg TEXT',
+      // groups for the spawns after the next one + alternation (lib/spawn-groups.js)
+      'ALTER TABLE bosses ADD COLUMN later_groups TEXT',
+      'ALTER TABLE bosses ADD COLUMN alternate_groups INTEGER DEFAULT 0',
       // carry over the single-server links made before this table existed
       'INSERT OR IGNORE INTO discord_guilds (guild_id, team_id) SELECT discord_guild_id, team_id FROM team_settings WHERE discord_guild_id IS NOT NULL',
       `CREATE TABLE IF NOT EXISTS join_requests (

@@ -9,7 +9,7 @@ import { limitsFor } from '../lib/limits.js';
 import { PRESETS, findPreset } from '../presets/index.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
 import { killAlert } from '../lib/boss-alerts.js';
-import { parseGroups } from '../lib/spawn-groups.js';
+import { parseGroups, cleanLater } from '../lib/spawn-groups.js';
 
 // Is the rule in this edit body the one the boss already has? Resending it (an older client, or a
 // form that sends everything) must not recalculate a running timer; only an actual change does.
@@ -81,8 +81,8 @@ export const routes = [
     const boss = await env.DB.prepare('SELECT * FROM bosses WHERE id = ? AND team_id = ?').bind(bossId, teamId).first();
     if (!boss) return json({ error: 'Boss not found' }, 404);
 
-    const settings = await env.DB.prepare('SELECT timezone FROM team_settings WHERE team_id = ?').bind(teamId).first();
-    const { day, nextSpawn } = await killBoss(env, { teamId, boss, deathTime, userId: user.userId, tz: settings?.timezone || 'Asia/Manila' });
+    const settings = await env.DB.prepare('SELECT timezone, spawn_groups FROM team_settings WHERE team_id = ?').bind(teamId).first();
+    const { day, nextSpawn } = await killBoss(env, { teamId, boss, deathTime, userId: user.userId, tz: settings?.timezone || 'Asia/Manila', groups: parseGroups(settings?.spawn_groups) });
     queueScheduleRefresh(ctx, env, teamId, { touchedDay: day });
     const alert = killAlert(env, { teamId, boss, by: user.username, at: deathTime, nextSpawn }).catch(e => console.error('kill alert failed:', e));
     if (ctx?.waitUntil) ctx.waitUntil(alert);
@@ -156,20 +156,24 @@ export const routes = [
     return json({ ok: true });
   } },
 
-  // PUT /api/teams/:id/bosses/:bossId/group { groupId | null } — tag the boss's NEXT spawn with a
-  // spawn group (officers+). Cleared automatically when that spawn is killed or auto-resets.
+  // PUT /api/teams/:id/bosses/:bossId/group — spawn groups for this boss (officers+):
+  //   { groupId }                      the next spawn only (timer row picker, older clients)
+  //   { groups: [next, 2nd, 3rd], alternate }   the groups dialog
+  // Each spawn's group moves on when that spawn is killed or auto-resets (lib/spawn-groups.js).
   { method: 'PUT', pattern: /^\/api\/teams\/([^/]+)\/bosses\/([^/]+)\/group$/, handler: async ({ request, env, ctx, user, params }) => {
     const [, teamId, bossId] = params;
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
     const body = await safeJson(request);
     if (!body) return json({ error: 'Invalid request body' }, 400);
-    const groupId = body.groupId ? String(body.groupId) : null;
-    if (groupId) {
-      const s = await env.DB.prepare('SELECT spawn_groups FROM team_settings WHERE team_id = ?').bind(teamId).first();
-      if (!parseGroups(s?.spawn_groups).some(g => g.id === groupId)) return json({ error: 'Unknown group' }, 400);
-    }
-    const r = await env.DB.prepare('UPDATE bosses SET spawn_group = ? WHERE id = ? AND team_id = ?').bind(groupId, bossId, teamId).run();
+    const s = await env.DB.prepare('SELECT spawn_groups FROM team_settings WHERE team_id = ?').bind(teamId).first();
+    const ids = new Set(parseGroups(s?.spawn_groups).map(g => g.id));
+    const list = Array.isArray(body.groups) ? body.groups : [body.groupId];
+    if (list.some(g => g && !ids.has(String(g)))) return json({ error: 'Unknown group' }, 400);
+    const sets = ['spawn_group = ?'], vals = [list[0] ? String(list[0]) : null];
+    if (Array.isArray(body.groups)) { sets.push('later_groups = ?'); vals.push(cleanLater(body.groups.slice(1), ids)); }
+    if (body.alternate !== undefined) { sets.push('alternate_groups = ?'); vals.push(body.alternate ? 1 : 0); }
+    const r = await env.DB.prepare(`UPDATE bosses SET ${sets.join(', ')} WHERE id = ? AND team_id = ?`).bind(...vals, bossId, teamId).run();
     if (!r.meta?.changes) return json({ error: 'Boss not found' }, 404);
     queueScheduleRefresh(ctx, env, teamId);
     return json({ ok: true });

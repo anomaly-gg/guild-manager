@@ -18,7 +18,8 @@ import {
 } from '../lib/discord-interactions.js';
 import { queueReplyCleanup } from '../lib/discord-cleanup.js';
 import { nextSpawnsText, fmtDuration, clockIn } from '../lib/schedule-format.js';
-import { parseGroups, groupTag } from '../lib/spawn-groups.js';
+import { parseGroups, groupTag, parseLater, cleanLater, MAX_LATER } from '../lib/spawn-groups.js';
+import { spawnsInWindow } from '../lib/spawn-projection.js';
 import { refreshSchedulePost } from '../lib/schedule-post.js';
 import { killAlert } from '../lib/boss-alerts.js';
 
@@ -80,7 +81,7 @@ async function cmdKilled(env, interaction, after) {
   const boss = pickBoss(bosses, optionValue(interaction, 'boss'));
   if (typeof boss === 'string') return fail(boss);
   const deathTime = Date.now() - minutesAgo * 60000;
-  const { nextSpawn, day } = await killBoss(env, { teamId: team.id, boss, deathTime, userId: m.user_id, tz: team.timezone });
+  const { nextSpawn, day } = await killBoss(env, { teamId: team.id, boss, deathTime, userId: m.user_id, tz: team.timezone, groups: parseGroups(team.spawn_groups) });
   after(() => refreshSchedulePost(env, team.id, { touchedDay: day }));
   after(() => killAlert(env, { teamId: team.id, boss, by: who.name, at: deathTime, nextSpawn }));
   const when = minutesAgo ? ` (${minutesAgo} min ago)` : '';
@@ -98,7 +99,8 @@ function pickBoss(bosses, raw) {
   return `No boss called "${wanted}" on this team.`;
 }
 
-// /assign boss group — officer tags a boss's next spawn with a spawn group (or clears it with "none").
+// /assign boss group [spawn] — officer tags one of the boss's coming spawns (1 = next, 2, 3) with a
+// spawn group, or clears it with "none".
 async function cmdAssign(env, interaction, after) {
   const team = await linkedTeam(env, interaction.guild_id);
   if (!team) return fail('This server is not linked to a team yet.');
@@ -106,16 +108,27 @@ async function cmdAssign(env, interaction, after) {
   if (!m || m.role === 'member') return fail('Only the leader or an officer can assign spawns.');
   const groups = parseGroups(team.spawn_groups);
   if (!groups.length) return fail('This team has no spawn groups yet. Add them in Guild Manager → Settings → Daily schedule post.');
-  const bosses = (await env.DB.prepare('SELECT id, name, next_spawn FROM bosses WHERE team_id = ?').bind(team.id).all()).results;
+  const bosses = (await env.DB.prepare('SELECT * FROM bosses WHERE team_id = ?').bind(team.id).all()).results;
   const boss = pickBoss(bosses, optionValue(interaction, 'boss'));
   if (typeof boss === 'string') return fail(boss);
   const g = String(optionValue(interaction, 'group') || '').trim();
   const group = g.toLowerCase() === 'none' ? null : groups.find(x => x.id === g) || groups.find(x => x.name.toLowerCase() === g.replace(/^@/, '').toLowerCase());
   if (group === undefined) return fail(`No group called "${g}". Groups: ${groups.map(x => x.name).join(', ')}.`);
-  await env.DB.prepare('UPDATE bosses SET spawn_group = ? WHERE id = ?').bind(group?.id || null, boss.id).run();
+  const which = Math.max(1, Math.min(1 + MAX_LATER, Number(optionValue(interaction, 'spawn')) || 1));
+  const tz = team.timezone || 'Asia/Manila';
+  if (which === 1) {
+    await env.DB.prepare('UPDATE bosses SET spawn_group = ? WHERE id = ?').bind(group?.id || null, boss.id).run();
+  } else {
+    const later = parseLater(boss.later_groups);
+    while (later.length < which - 1) later.push(null);
+    later[which - 2] = group?.id || null;
+    await env.DB.prepare('UPDATE bosses SET later_groups = ? WHERE id = ?').bind(cleanLater(later, new Set(groups.map(g => g.id))), boss.id).run();
+  }
   after(() => refreshSchedulePost(env, team.id));
-  const at = clockIn(boss.next_spawn, team.timezone || 'Asia/Manila');
-  return group ? `**${boss.name}** (${at}) → ${groupTag(groups, group.id)}` : `**${boss.name}** (${at}) → no group`;
+  const spawn = spawnsInWindow(boss, 0, Infinity, tz, groups).find(s => s.index === which - 1);
+  const at = spawn ? clockIn(spawn.at, tz) : '?';
+  const label = which === 1 ? 'next spawn' : `${which === 2 ? '2nd' : '3rd'} spawn`;
+  return `**${boss.name}** ${label} (~${at}) → ${group ? groupTag(groups, group.id) : 'no group'}`;
 }
 
 // Resolve boss option values (autocomplete gives ids; typed text gives names) -> [{ id, name }] | error string

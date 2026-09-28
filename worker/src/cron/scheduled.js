@@ -7,6 +7,7 @@ import { spawnEndStmt, cronScheduleRefresh } from '../lib/schedule-post.js';
 import { syncCommands } from '../lib/discord-commands.js';
 import { runReplyCleanup } from '../lib/discord-cleanup.js';
 import { alertSoon, alertSpawned, alertEnded } from '../lib/boss-alerts.js';
+import { parseGroups, advanceGroups } from '../lib/spawn-groups.js';
 
 export async function handleScheduled(env) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
@@ -25,7 +26,7 @@ export async function handleScheduled(env) {
   try {
     const bosses = await env.DB.prepare(`
       SELECT b.*,
-             ts.webhook_url, ts.webhook_boss, ts.on_warning, ts.on_spawn, ts.timezone
+             ts.webhook_url, ts.webhook_boss, ts.on_warning, ts.on_spawn, ts.timezone, ts.spawn_groups AS team_groups
       FROM bosses b
       LEFT JOIN team_settings ts ON ts.team_id = b.team_id
       WHERE b.status IN ('waiting', 'spawned')
@@ -65,8 +66,9 @@ export async function handleScheduled(env) {
         } else if (boss.status === 'spawned' && boss.auto_reset_at != null && boss.auto_reset_at <= now) {
           const nextSpawn = calcNextSpawn(boss, now, tz);
           const ended = spawnEndStmt(env, { teamId: boss.team_id, boss, outcome: 'reset', endedAt: now, tz });
-          dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0, spawn_group = NULL, alert_soon_msg = NULL, alert_spawn_msg = NULL, next_spawn = ? WHERE id = ?')
-            .bind('waiting', nextSpawn, boss.id), ended.stmt);
+          const { spawnGroup, laterGroups } = advanceGroups(boss, parseGroups(boss.team_groups));
+          dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0, spawn_group = ?, later_groups = ?, alert_soon_msg = NULL, alert_spawn_msg = NULL, next_spawn = ? WHERE id = ?')
+            .bind('waiting', spawnGroup, laterGroups, nextSpawn, boss.id), ended.stmt);
           scheduleTouched.set(boss.team_id, ended.day);
           // No new message: the spawn's alert is edited to say it reset.
           discordSends.push(alertEnded(env, bossHook, boss, tz, { outcome: 'reset', at: now, nextSpawn }));

@@ -17,6 +17,7 @@ export const COMMANDS = [
     options: [
       { type: 3, name: 'boss', description: 'Boss name', required: true, autocomplete: true },
       { type: 3, name: 'group', description: 'Group, or "No group" to clear', required: true, autocomplete: true },
+      { type: 4, name: 'spawn', description: 'Which spawn (default: the next one)', choices: [{ name: 'Next spawn', value: 1 }, { name: '2nd spawn', value: 2 }, { name: '3rd spawn', value: 3 }] },
     ] },
   { name: 'here', description: 'Check in to a rally with a screenshot (team members)',
     options: [

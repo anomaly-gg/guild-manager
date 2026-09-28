@@ -8,7 +8,7 @@ import { json, safeJson } from '../lib/http.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { limitsFor } from '../lib/limits.js';
 import { bossInsertStmt } from '../lib/boss-create.js';
-import { parseGroups } from '../lib/spawn-groups.js';
+import { parseGroups, cleanLater } from '../lib/spawn-groups.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
 
 const DAY = 86400000;
@@ -16,7 +16,8 @@ const MAX_ITEMS = 100;
 const RULE_KEYS = ['type', 'intervalMs', 'fixedTime', 'weeklyDay', 'weeklyTime', 'biweeklyDays', 'twiceDailyTimes', 'windowMs', 'location', 'alertMinutes', 'autoResetMinutes'];
 
 export const routes = [
-  // POST /api/teams/:id/bosses/import-schedule { items: [{ bossId? | add: { name, type, ... }, nextSpawn, groupId? }] }
+  // POST /api/teams/:id/bosses/import-schedule { items: [{ bossId? | add: { name, type, ... }, nextSpawn, groupId?, laterGroups? }] }
+  // laterGroups = groups of the boss's following spawns on the screenshot (Lady Dalia 2:04 Kongreso, 8:04 Senado).
   { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/import-schedule$/, handler: async ({ request, env, ctx, user, params }) => {
     const teamId = params[1];
     const member = await requireTeamMember(env, teamId, user.userId);
@@ -47,9 +48,10 @@ export const routes = [
       if (target) {
         if (touched.has(target.id)) { skipped.push({ name: target.name, why: 'listed twice' }); continue; }
         touched.add(target.id);
+        const later = Array.isArray(it.laterGroups) ? cleanLater(it.laterGroups, groupIds) : undefined;
         stmts.push(env.DB.prepare(`UPDATE bosses SET next_spawn = ?, status = 'waiting', spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0,
-            alert_soon_msg = NULL, alert_spawn_msg = NULL, spawn_group = COALESCE(?, spawn_group) WHERE id = ? AND team_id = ?`)
-          .bind(at, groupId, target.id, teamId));
+            alert_soon_msg = NULL, alert_spawn_msg = NULL, spawn_group = COALESCE(?, spawn_group)${later !== undefined ? ', later_groups = ?' : ''} WHERE id = ? AND team_id = ?`)
+          .bind(...[at, groupId, ...(later !== undefined ? [later] : []), target.id, teamId]));
         updated.push(target.name);
         continue;
       }
@@ -63,7 +65,8 @@ export const routes = [
       const rule = Object.fromEntries(RULE_KEYS.filter(k => it.add[k] !== undefined).map(k => [k, it.add[k]]));
       const { id, stmt } = bossInsertStmt(env, teamId, { ...rule, name, nextSpawnAt: at }, tz, now);
       stmts.push(stmt);
-      if (groupId) stmts.push(env.DB.prepare('UPDATE bosses SET spawn_group = ? WHERE id = ?').bind(groupId, id));
+      const later = Array.isArray(it.laterGroups) ? cleanLater(it.laterGroups, groupIds) : null;
+      if (groupId || later) stmts.push(env.DB.prepare('UPDATE bosses SET spawn_group = ?, later_groups = ? WHERE id = ?').bind(groupId, later, id));
       byName.set(name.toLowerCase(), { id, name });
       touched.add(id);
       added.push(name);
