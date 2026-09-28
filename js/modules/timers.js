@@ -257,8 +257,10 @@ function openBossModal(b) {
     back.querySelector('[data-close]:not(.modal-backdrop)').addEventListener('click', closeModal);
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const body = readBossForm(form);
-        if (!body) return;
+        const full = readBossForm(form);
+        if (!full) return;
+        const body = b ? changedFields(b, full) : full;
+        if (b && !Object.keys(body).length) { closeModal(); showToast('No changes'); return; }
         const res = b
             ? await api('PUT', `/api/teams/${currentTeamId}/bosses/${b.id}`, body)
             : await api('POST', `/api/teams/${currentTeamId}/bosses`, body);
@@ -301,6 +303,28 @@ function readBossForm(form) {
         body.biweeklyDays = [{ day: parseInt(v('bfBiDay1')), time: t1 }, { day: parseInt(v('bfBiDay2')), time: t2 }];
     }
     return body;
+}
+
+// Edit = only the fields that differ from the saved boss. The spawn rule goes along only when it
+// changed, because the server recalculates the running timer whenever it gets one.
+const SCHEDULE_KEYS = ['type', 'intervalMs', 'fixedTime', 'weeklyDay', 'weeklyTime', 'twiceDailyTimes', 'biweeklyDays'];
+function changedFields(b, full) {
+    const out = {};
+    if (full.name !== b.name) out.name = full.name;
+    if ((full.location || null) !== (b.location || null)) out.location = full.location;
+    if (full.alertMinutes !== (b.alert_minutes ?? 5)) out.alertMinutes = full.alertMinutes;
+    if (full.autoResetMinutes !== (b.auto_reset_minutes ?? 5)) out.autoResetMinutes = full.autoResetMinutes;
+    if (full.windowMs !== (b.window_ms || 0)) out.windowMs = full.windowMs;
+    const days = (() => { try { return typeof b.biweekly_days === 'string' ? JSON.parse(b.biweekly_days) : b.biweekly_days; } catch { return null; } })();
+    const same = full.type === b.type && (
+        full.type === 'interval' ? full.intervalMs === b.interval_ms
+        : full.type === 'fixed' ? full.fixedTime === b.fixed_time
+        : full.type === 'weekly' ? full.weeklyDay === b.weekly_day && full.weeklyTime === b.weekly_time
+        : full.type === 'twicedaily' ? JSON.stringify(full.twiceDailyTimes) === JSON.stringify(days)
+        : full.type === 'biweekly' ? JSON.stringify(full.biweeklyDays) === JSON.stringify(days)
+        : false);
+    if (!same) for (const k of SCHEDULE_KEYS) if (full[k] !== undefined) out[k] = full[k];
+    return out;
 }
 
 function openDeathModal(b) {

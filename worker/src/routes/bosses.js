@@ -10,6 +10,18 @@ import { PRESETS, findPreset } from '../presets/index.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
 import { parseGroups } from '../lib/spawn-groups.js';
 
+// Is the rule in this edit body the one the boss already has? Resending it (an older client, or a
+// form that sends everything) must not recalculate a running timer; only an actual change does.
+function sameRule(boss, body) {
+  const type = body.type || boss.type;
+  if (type !== boss.type) return false;
+  if (type === 'interval') return Number(body.intervalMs ?? boss.interval_ms) === boss.interval_ms;
+  if (type === 'fixed') return (body.fixedTime ?? boss.fixed_time) === boss.fixed_time;
+  if (type === 'weekly') return Number(body.weeklyDay ?? boss.weekly_day) === boss.weekly_day && (body.weeklyTime ?? boss.weekly_time) === boss.weekly_time;
+  const days = body.biweeklyDays ? JSON.stringify(body.biweeklyDays) : body.twiceDailyTimes ? JSON.stringify(body.twiceDailyTimes) : boss.biweekly_days;
+  return days === boss.biweekly_days;
+}
+
 export const routes = [
   // GET /api/teams/:id/bosses
   { method: 'GET', pattern: /^\/api\/teams\/([^/]+)\/bosses$/, handler: async ({ env, user, params }) => {
@@ -98,8 +110,9 @@ export const routes = [
     if (body.autoResetMinutes !== undefined) { sets.push('auto_reset_minutes = ?'); vals.push(Math.max(1, Math.min(1440, parseInt(body.autoResetMinutes) || 5))); }
     if (body.windowMs !== undefined) { sets.push('window_ms = ?'); vals.push(Math.max(0, Math.min(86400000, parseInt(body.windowMs) || 0))); }
 
-    const scheduleChanged = body.type !== undefined || body.intervalMs !== undefined || body.fixedTime !== undefined ||
-      body.weeklyDay !== undefined || body.weeklyTime !== undefined || body.biweeklyDays !== undefined || body.twiceDailyTimes !== undefined;
+    const scheduleChanged = (body.type !== undefined || body.intervalMs !== undefined || body.fixedTime !== undefined ||
+      body.weeklyDay !== undefined || body.weeklyTime !== undefined || body.biweeklyDays !== undefined || body.twiceDailyTimes !== undefined) &&
+      !sameRule(boss, body);
     if (scheduleChanged) {
       const type = body.type || boss.type;
       const settings = await env.DB.prepare('SELECT timezone FROM team_settings WHERE team_id = ?').bind(teamId).first();
