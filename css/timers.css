@@ -40,16 +40,18 @@
 
 .tcard-body { grid-area: body; min-width: 0; }
 .tcard-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-/* the boss name wins the space; the group picker shrinks first */
-.tcard-top .tcard-name { flex-shrink: 0; max-width: 70%; }
-.tcard-group { margin-left: auto; flex-shrink: 1; min-width: 64px; field-sizing: content; max-width: 60%; padding: 2px 6px; font-size: 0.75rem; font-weight: 600; border: 1px dashed var(--border-strong); border-radius: 999px; background: transparent; color: var(--text-dim); cursor: pointer; }
+/* spawn group picker/tag: first thing on the bottom line, same spot on every card */
+.tcard-group { flex-shrink: 0; max-width: 60%; field-sizing: content; padding: 0 6px; line-height: 1.5; font-size: 0.7rem; font-weight: 600; border: 1px dashed var(--border-strong); border-radius: 999px; background: transparent; color: var(--text-dim); cursor: pointer; }
 .tcard-group:not(.is-set) { opacity: 0.7; }
 .tcard-group:not(.is-set):hover, .tcard-group:focus { opacity: 1; }
 .tcard-group.is-set { border-style: solid; border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
-.tcard-group-tag { margin-left: auto; flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcard-group-tag { flex-shrink: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.7rem; padding: 0 6px; }
 .tcard-name { margin: 0; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tcard-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tcard-sub { display: none; }
+.tcard-sub { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 3px; font-size: 0.72rem; color: var(--text-dim); }
+.tcard-sub-text { display: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* phones: the line only appears to hold the group picker/tag */
+.tcard-sub:not(:has(.tcard-group, .tcard-group-tag)) { display: none; }
 
 .tcard-right { grid-area: right; text-align: right; }
 .tcard-countdown { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 1.1rem; font-weight: 700; color: var(--success); line-height: 1.1; }
@@ -65,7 +67,8 @@
 
 @media (min-width: 640px) {
     .tcard { grid-template-columns: 40px minmax(0, 1fr) auto auto; grid-template-areas: "ring body right actions"; padding: 8px 12px; }
-    .tcard-sub { display: block; font-size: 0.72rem; color: var(--text-dim); margin-top: 1px; }
+    .tcard-sub, .tcard-sub:not(:has(.tcard-group, .tcard-group-tag)) { display: flex; margin-top: 1px; }
+    .tcard-sub-text { display: block; }
     .tcard-actions { margin-left: 8px; }
     .tcard-more { display: none; }
     .tcard-secondary { display: flex; }

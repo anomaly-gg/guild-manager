@@ -146,9 +146,9 @@ export function cardHtml(boss, opts = {}, now = Date.now()) {
                 <span class="tcard-icon">${stateIcon(st.key)}</span>
             </div>
             <div class="tcard-body">
-                <div class="tcard-top"><h4 class="tcard-name">${esc(boss.name)}</h4><span class="tcard-chip">${CHIP[st.key]}</span>${groupHtml(boss, opts)}</div>
+                <div class="tcard-top"><h4 class="tcard-name">${esc(boss.name)}</h4><span class="tcard-chip">${CHIP[st.key]}</span></div>
                 <div class="tcard-meta">${meta}${windowNote}</div>
-                <div class="tcard-sub">${sub}</div>
+                <div class="tcard-sub">${groupHtml(boss, opts)}<span class="tcard-sub-text" title="${esc(sub)}">${sub}</span></div>
             </div>
             <div class="tcard-right">
                 <div class="tcard-countdown">${countdownText(boss, st)}</div>
