@@ -5,7 +5,7 @@
 // (api, showToast, guard, currentTeamId, teamBosses, teamSpawnGroups, teamTz, teamTimeStr).
 
 import { esc } from './timer-cards.js?v=20260929c';
-import { parseScheduleText, buildPlan, laterGroupsFor } from './schedule-parse.js?v=20260929b';
+import { parseScheduleText, buildPlan, laterGroupsFor } from './schedule-parse.js?v=20260929c';
 
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 let workerPromise = null;   // one OCR worker per page load; the language data downloads once

@@ -38,3 +38,6 @@
 .sg-row { display: flex; gap: 8px; align-items: center; }
 .sg-row .sg-name, .sg-row .sg-role { flex: 1 1 140px; min-width: 0; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); font-size: 0.9rem; }
 .sg-row .sg-name:focus, .sg-row .sg-role:focus { outline: none; border-color: var(--accent); }
+.sg-turns { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; cursor: pointer; }
+.sg-turns input { accent-color: var(--accent); }
+@media (max-width: 560px) { .sg-row { flex-wrap: wrap; } .sg-row .sg-name, .sg-row .sg-role { flex-basis: 100%; } }

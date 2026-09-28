@@ -27,11 +27,11 @@
     </main>
 
     <script type="module">
-        import { updateCard, sortBosses, bossState, groupedListHtml, esc, fmtDuration } from './js/modules/timer-cards.js?v=20260929b';
+        import { updateCard, sortBosses, bossState, groupedListHtml, esc, fmtDuration } from './js/modules/timer-cards.js?v=20260929c';
         const API = 'https://guild-manager.xpropics.workers.dev';
         const token = new URLSearchParams(location.search).get('t') || '';
         const pub = document.getElementById('pub');
-        let team = null, bosses = [];
+        let team = null, bosses = [], groups = [];
 
         function summary(now) {
             if (!bosses.length) return 'No timers yet';
@@ -57,7 +57,7 @@
             document.title = `${team.name} — Boss Timers`;
             pub.innerHTML = `
                 <div class="pub-head"><h1>${esc(team.name)}</h1><span class="t-dim" data-role="summary">${summary(now)}</span></div>
-                <div class="tcards">${groupedListHtml(bosses, { readOnly: true, teamTimeNote: teamTimeNote() }, now) || '<div class="t-empty card"><div class="t-empty-title">No timers yet</div></div>'}</div>`;
+                <div class="tcards">${groupedListHtml(bosses, { readOnly: true, groups, teamTimeNote: teamTimeNote() }, now) || '<div class="t-empty card"><div class="t-empty-title">No timers yet</div></div>'}</div>`;
         }
 
         async function load() {
@@ -66,7 +66,7 @@
                 const r = await fetch(`${API}/public/timers/${encodeURIComponent(token)}`);
                 const data = await r.json();
                 if (!r.ok || data.error) { pub.innerHTML = `<div class="pub-error">${esc(data.error || 'This timer page is not available.')}<br><span class="t-dim">The team may have disabled sharing.</span></div>`; return; }
-                team = data.team; bosses = data.bosses || [];
+                team = data.team; bosses = data.bosses || []; groups = data.groups || [];
                 render();
             } catch (e) {
                 pub.innerHTML = '<div class="pub-error">Could not load timers. Check your connection and retry.</div>';

@@ -19,7 +19,8 @@ function parseDate(line) {
 
 // One schedule line -> { h, min, name, level?, tag? } | null. OCR noise around the pipes is tolerated.
 function parseRow(line) {
-    const t = line.match(/(\d{1,2})\s*[:.]\s*(\d{2})\s*([AaPp])\.?\s*[Mm]?\.?/) || line.match(/\b(\d{1,2})\s*:\s*(\d{2})\b/);
+    // AM/PM as OCR really reads it: "AM", "a.m.", "an", "An", "arn", "pn"...
+    const t = line.match(/(\d{1,2})\s*[:.]\s*(\d{2})\s*([AaPp])\.?\s*(?:[Mm]|rn|[Nn]|[Hh])?\.?(?![A-Za-z])/) || line.match(/\b(\d{1,2})\s*:\s*(\d{2})\b/);
     if (!t) return null;
     let h = +t[1]; const min = +t[2];
     if (min > 59 || h > 23) return null;
@@ -30,7 +31,7 @@ function parseRow(line) {
     let name = null, level, tag;
     for (const c of cells) {
         if (!tag && /^@/.test(c)) { tag = c.replace(/^@+/, '').split(/\s+/)[0]; continue; }
-        if (!name) {
+        if (!name && (c.match(/[A-Za-z]/g) || []).length >= 2) {   // skip OCR crumbs like "n" or "_"
             const lv = c.match(/\((\d{1,4})\)/);
             if (lv) level = +lv[1];
             name = c.replace(/\(\s*\d{1,4}\s*\)?/g, '').replace(/[*_~`]/g, '').trim();

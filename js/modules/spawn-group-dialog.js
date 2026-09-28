@@ -31,7 +31,7 @@ export function open(boss, { onSaved } = {}) {
                 <h2>Groups for ${esc(boss.name)}</h2>
                 <form class="tform" id="sgForm">
                     ${select(0)}${select(1)}${select(2)}
-                    <label class="s-toggle tf-wide"><input type="checkbox" id="sgAlt" ${boss.alternate_groups ? 'checked' : ''}><span>Alternate groups<small>When a spawn ends and nobody picked a group for the next one, it goes to the next group in your list (${esc(groups.map(g => g.name).join(' → '))} → …).</small></span></label>
+                    <label class="s-toggle tf-wide"><input type="checkbox" id="sgAlt" ${boss.alternate_groups ? 'checked' : ''}><span>Alternate groups<small>When a spawn ends and nobody picked a group for the next one, it goes to the next group that takes turns (${esc(groups.filter(g => g.rotation !== false).map(g => g.name).join(' → ') || 'none yet')} → …).</small></span></label>
                     <p class="tf-help tf-wide">Each pick belongs to that spawn: when it is killed or auto-resets, the 2nd becomes the next, and so on.</p>
                     <div class="tf-actions tf-wide">
                         <button type="button" class="btn btn-secondary" data-close="1">Cancel</button>

@@ -1,5 +1,6 @@
 // Spawn groups: the alliance guilds / parties an officer hands spawns to (2-8 per team).
-// Stored as JSON on team_settings.spawn_groups: [{ id, name, roleId? }].
+// Stored as JSON on team_settings.spawn_groups: [{ id, name, roleId?, rotation? }]; rotation: false =
+// the group never takes a turn in alternation (e.g. an "ALL" group for everyone-bosses).
 // Per boss, groups are kept per SPAWN: bosses.spawn_group = the next spawn, bosses.later_groups =
 // JSON list for the spawns after it (2nd, 3rd, ...). When a spawn ends its group moves to the
 // schedule_spawns row and the list moves up (advanceGroups). bosses.alternate_groups = when nobody
@@ -21,7 +22,7 @@ export function cleanGroups(list) {
     const id = /^[a-z0-9]{4,12}$/.test(g?.id || '') ? g.id : crypto.randomUUID().replace(/-/g, '').slice(0, 8);
     const roleId = /^\d{5,25}$/.test(String(g?.roleId || '')) ? String(g.roleId) : null;
     if (out.some(x => x.name.toLowerCase() === name.toLowerCase())) return `Two groups are called "${name}"`;
-    out.push({ id, name, roleId });
+    out.push({ id, name, roleId, ...(g?.rotation === false ? { rotation: false } : {}) });
   }
   return out;
 }
@@ -41,11 +42,13 @@ export function parseLater(raw) {
   try { const a = typeof raw === 'string' ? JSON.parse(raw) : raw; return Array.isArray(a) ? a.map(x => x || null) : []; } catch { return []; }
 }
 
-// The group after `groupId` in the team's list (wraps round); null when there is nothing to cycle.
+// The group after `groupId` among the groups that take turns (wraps round). After a spawn of a
+// group outside the rotation (or no group), the first group in the rotation. null = nothing to cycle.
 export function nextGroup(groups, groupId) {
-  const i = groups.findIndex(g => g.id === groupId);
-  if (i < 0 || groups.length < 2) return null;
-  return groups[(i + 1) % groups.length].id;
+  const turns = groups.filter(g => g.rotation !== false);
+  if (!groupId || turns.length < 2) return null;
+  const i = turns.findIndex(g => g.id === groupId);
+  return i < 0 ? turns[0].id : turns[(i + 1) % turns.length].id;
 }
 
 // A spawn of `boss` just ended (kill or auto-reset) -> the groups for the spawns that follow.

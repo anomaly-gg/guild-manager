@@ -3,7 +3,7 @@
 // Only fields the worker actually consumes are shown here — if a setting has no consumer, it is cut.
 
 import { esc } from './timer-cards.js?v=20260923e';
-import * as ScheduleCard from './schedule-settings.js?v=20260929a';
+import * as ScheduleCard from './schedule-settings.js?v=20260929b';
 
 const TIMEZONES = ['Asia/Manila', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Australia/Sydney', 'Pacific/Auckland'];
 

@@ -149,8 +149,8 @@ function onClick(e) {
         case 'import': root().querySelector('[data-role="importfile"]').click(); break;
         case 'templates': showTemplates(); break;
         case 'presets': showPresets(); break;
-        case 'groups': { const b = byId(id); if (b) import('./spawn-group-dialog.js?v=20260929b').then(m => m.open(b, { onSaved: () => renderList() })); break; }
-        case 'import-shot': import('./schedule-import.js?v=20260929b').then(m => m.open({ onDone: () => reload(true) })); break;
+        case 'groups': { const b = byId(id); if (b) import('./spawn-group-dialog.js?v=20260929c').then(m => m.open(b, { onSaved: () => renderList() })); break; }
+        case 'import-shot': import('./schedule-import.js?v=20260929c').then(m => m.open({ onDone: () => reload(true) })); break;
         case 'history': showHistory(); break;
         case 'removeall': removeAll(); break;
         case 'more': btn.closest('.tcard')?.classList.toggle('open'); break;

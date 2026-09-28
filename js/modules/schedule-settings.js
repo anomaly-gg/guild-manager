@@ -19,7 +19,7 @@ export function cardHtml(settings) {
             </div>
         </div>
         <div class="t-h3">Spawn groups</div>
-        <p class="s-desc">The alliance guilds or parties you hand spawns to. Assign a spawn on the Timers page or with <code>/assign</code> in Discord; the post and <code>/next</code> show it at the end of the line. Pick a Discord role to show it as that role's coloured tag (nobody gets pinged).</p>
+        <p class="s-desc">The alliance guilds or parties you hand spawns to. Assign a spawn on the Timers page or with <code>/assign</code> in Discord; the post and <code>/next</code> show it at the end of the line. Pick a Discord role to show it as that role's coloured tag (nobody gets pinged). Untick <b>Takes turns</b> for a group like "ALL" that bosses set to alternate should never land on.</p>
         <div class="sg-list" data-role="sg-list">${(settings.spawnGroups || []).map(rowHtml).join('')}</div>
         <div class="tf-actions" style="justify-content:flex-start">
             <button class="btn btn-secondary btn-sm" data-sched="add-group">+ Add group</button>
@@ -42,6 +42,7 @@ function rowHtml(g = {}) {
     return `<div class="sg-row" data-id="${esc(g.id || '')}">
         <input type="text" class="sg-name" maxlength="30" placeholder="Group name, e.g. Kongreso" value="${esc(g.name || '')}">
         <select class="sg-role" data-role-id="${esc(g.roleId || '')}">${roleOptions(g.roleId || '')}</select>
+        <label class="sg-turns" title="Takes a turn when bosses alternate groups"><input type="checkbox" class="sg-rotation" ${g.rotation === false ? '' : 'checked'}> Takes turns</label>
         <button class="tbtn-icon tbtn-icon-danger" data-sched="remove-group" title="Remove group" aria-label="Remove group">&times;</button>
     </div>`;
 }
@@ -51,6 +52,7 @@ function readGroups(card) {
         id: row.dataset.id || undefined,
         name: row.querySelector('.sg-name').value.trim(),
         roleId: row.querySelector('.sg-role').value || null,
+        rotation: row.querySelector('.sg-rotation').checked,
     })).filter(g => g.name);
 }
 
