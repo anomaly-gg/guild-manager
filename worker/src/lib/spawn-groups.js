@@ -36,6 +36,11 @@ export function groupTag(groups, groupId) {
   return g.roleId ? `<@&${g.roleId}>` : `@${g.name}`;
 }
 
+// Plain group name, no mention: for crossed-out schedule lines, where a coloured role pill is noise.
+export function groupName(groups, groupId) {
+  return (groupId && groups.find(x => x.id === groupId)?.name) || '';
+}
+
 export const MAX_LATER = 3;
 
 export function parseLater(raw) {

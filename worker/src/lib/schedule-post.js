@@ -5,7 +5,7 @@
 // recorded in schedule_spawns so the day's post can keep them, crossed out.
 
 import { isValidDiscordWebhook, webhookCall } from './discord.js';
-import { dayKey, dayLabel, dayScheduleText } from './schedule-format.js';
+import { dayKey, weekdayLabel, dayScheduleText } from './schedule-format.js';
 import { parseGroups } from './spawn-groups.js';
 
 const KEEP_DAYS = 3;
@@ -26,15 +26,17 @@ export function spawnEndStmt(env, { teamId, boss, outcome, endedAt, tz }) {
 }
 
 // Noon UTC on a YYYY-MM-DD key, formatted in UTC = that calendar date regardless of zone.
-const labelForKey = (key) => dayLabel(Date.parse(key + 'T12:00:00Z'), 'UTC');
+const labelForKey = (key) => weekdayLabel(Date.parse(key + 'T12:00:00Z'), 'UTC');
 
-function payload(teamName, day, text, tz) {
+// `timestamp` = when this edit was made: Discord shows it in the footer as "Today at 3:20 PM".
+function payload(teamName, day, text, tz, now) {
   return {
     embeds: [{
-      title: `${teamName} — ${labelForKey(day)}`.slice(0, 256),
+      title: `${teamName} · ${labelForKey(day)}`.slice(0, 256),
       description: text.length > 4096 ? text.slice(0, 4090) + '\n…' : text,
       color: 0x5865f2,
-      footer: { text: `Team time (${tz}) · updates live · Guild Manager` },
+      footer: { text: `${tz} time · updates live` },
+      timestamp: new Date(now).toISOString(),
     }],
     allowed_mentions: { parse: [] },
   };
@@ -70,7 +72,7 @@ export async function refreshSchedulePost(env, teamId, { touchedDay } = {}) {
     env.DB.prepare(`SELECT * FROM schedule_spawns WHERE team_id = ? AND day IN (${days.map(() => '?').join(',')})`).bind(teamId, ...days),
   ]);
   const groups = parseGroups(s.spawn_groups);
-  const body = (day) => payload(s.team_name, day, dayScheduleText(day, bosses.results, ended.results.filter(e => e.day === day), tz, now, groups), tz);
+  const body = (day) => payload(s.team_name, day, dayScheduleText(day, bosses.results, ended.results.filter(e => e.day === day), tz, now, groups), tz, now);
 
   if (msgId) {
     const r = await webhookCall(env, s.webhook_schedule, 'PATCH', msgId, body(today));

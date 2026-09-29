@@ -24,8 +24,11 @@ link). `/killed` is not, because a stranger in a public server could reset a gui
 
 Not a slash command: a webhook message. With Settings → Daily schedule post → webhook set, the
 cron posts one embed per team-clock day at 00:00 and edits that same message (never a new one)
-when a spawn comes up (🔴 UP), is killed (`~~line~~ — dead`), auto-resets (`— auto-reset`), or a
-timer/group changes. Short-timer bosses appear once per spawn that day: the later ones are projected
+when a spawn comes up (`🔴 up <t:…:R>`), is killed (grey `-# ~~line~~ ✓`, packed at the top),
+auto-resets (`↺ auto-reset`), or a timer/group changes. A summary line (`✅ done · 🔴 up · ⏳ to go`)
+heads the post, the soonest spawn carries `⏳ next, <t:…:R>`, and blocks are split by blank lines.
+Relative `<t:…:R>` timestamps count down in each reader's Discord, so they stay right between edits;
+the embed timestamp shows when the post was last edited. Short-timer bosses appear once per spawn that day: the later ones are projected
 (next spawn + respawn, or the next calendar time; lib/spawn-projection.js) and move by themselves
 when the real kill is logged. `/next` lists spawns the same way (repeats within 24 h). Finished spawns are kept in `schedule_spawns` (pruned after 3 days) so the
 day's post keeps them crossed out. A kill after midnight of last night's spawn also edits

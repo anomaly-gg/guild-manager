@@ -106,7 +106,7 @@ let mark = hooks.length;
 [s] = await api('PUT', `/api/teams/${team}/settings`, { webhookSchedule: 'https://discord.com/api/webhooks/999/tokA' }, leader);
 let h = await nextHook(mark);
 check('saving the webhook posts today right away', s === 200 && h?.method === 'POST' && h.hook === '999', h);
-check('post is an embed titled team + date, no mentions parsed', /^Sched Guild — \d{1,2} \w+ \d{4}$/.test(h?.body?.embeds?.[0]?.title || '') && JSON.stringify(h?.body?.allowed_mentions) === '{"parse":[]}', h?.body);
+check('post is an embed titled team + weekday date, stamped with the edit time, no mentions parsed', /^Sched Guild · \w+day \d{1,2} \w+$/.test(h?.body?.embeds?.[0]?.title || '') && Math.abs(Date.parse(h?.body?.embeds?.[0]?.timestamp) - Date.now()) < 60000 && JSON.stringify(h?.body?.allowed_mentions) === '{"parse":[]}', h?.body);
 let st = rows(`SELECT schedule_day, schedule_msg_id FROM team_settings WHERE team_id='${team}'`)[0];
 check('message id + day stored', st.schedule_msg_id === h?.msg && st.schedule_day === dayKey(Date.now()), st);
 const msg1 = h?.msg;
@@ -147,13 +147,13 @@ check('assigning edits the post in place with the role mention', s === 200 && h?
 sql(`UPDATE bosses SET next_spawn = ${Date.now() - 60000}, status='waiting' WHERE id='${ven}'`);
 mark = hooks.length; await cron();
 h = await nextHook(mark, x => x.method === 'PATCH');
-check('cron: spawned boss shows 🔴 UP on the post', /Venatus.*🔴 UP/.test(desc(h)), desc(h));
+check('cron: spawned boss shows 🔴 up with a live Discord timestamp', /\*\*Venatus\*\*.*🔴 up <t:\d+:R>/.test(desc(h)), desc(h));
 
 // ---- kill from the site -> crossed out, group kept on the line, cleared on the boss
 mark = hooks.length;
 [s] = await api('POST', `/api/teams/${team}/bosses/${ven}/kill`, { deathTime: Date.now() }, mem);
 h = await nextHook(mark, x => x.method === 'PATCH');
-check('site kill: line crossed out with "dead", group tag kept', s === 200 && /~~`[^`]+` \| Venatus \| <@&5551234567>~~ — dead/.test(desc(h)), desc(h));
+check('site kill: line shrinks to grey, crossed out with ✓, group name kept', s === 200 && /^-# ~~`[^`]+` Venatus[^~\n]* · Kongreso~~ ✓$/m.test(desc(h)), desc(h));
 check('site kill: group cleared for the next spawn', rows(`SELECT spawn_group FROM bosses WHERE id='${ven}'`)[0].spawn_group === null);
 const rec = rows(`SELECT * FROM schedule_spawns WHERE boss_id='${ven}'`);
 check('schedule_spawns row recorded (dead, group, today)', rec.length === 1 && rec[0].outcome === 'dead' && rec[0].group_id === KON && rec[0].day === dayKey(Date.now()), rec);
@@ -164,7 +164,7 @@ mark = hooks.length;
 let t = await run('assign', [{ name: 'boss', value: 'Viorent' }, { name: 'group', value: '@senado' }], LEADER);
 h = await nextHook(mark, x => x.method === 'PATCH');
 check('/assign by name works and edits the post', /\*\*Viorent\*\* next spawn \(.+\) → @Senado/.test(t) && /Viorent.*@Senado/.test(desc(h)), [t, desc(h)]);
-check('/next shows the group tag', /Viorent \|[^\n]*@Senado/.test(await run('next', [{ name: 'count', value: 25 }], MEMBER)));
+check('/next shows the group tag', /\*\*Viorent\*\*[^\n]*@Senado/.test(await run('next', [{ name: 'count', value: 25 }], MEMBER)));
 t = await run('assign', [{ name: 'boss', value: vio }, { name: 'group', value: 'none' }], LEADER);
 check('/assign none clears', /no group/.test(t) && rows(`SELECT spawn_group FROM bosses WHERE id='${vio}'`)[0].spawn_group === null, t);
 let [, ac] = await interact({ type: 4, guild_id: 'G1', data: { name: 'assign', options: [{ name: 'boss', value: vio }, { name: 'group', value: 'kon', focused: true }] }, member: member(LEADER) });
@@ -173,13 +173,13 @@ sql(`UPDATE bosses SET next_spawn = ${Date.now() - 120000}, status='spawned' WHE
 mark = hooks.length;
 t = await run('killed', [{ name: 'boss', value: 'Lady Dalia' }], MEMBER);
 h = await nextHook(mark, x => x.method === 'PATCH');
-check('/killed replies and crosses the line out', /Lady Dalia\*\* killed/.test(t) && /~~`[^`]+` \| Lady Dalia~~ — dead/.test(desc(h)), [t, desc(h)]);
+check('/killed replies and crosses the line out', /Lady Dalia\*\* killed/.test(t) && /^-# ~~`[^`]+` Lady Dalia[^~\n]*~~ ✓$/m.test(desc(h)), [t, desc(h)]);
 
 // ---- auto-reset (cron)
 sql(`UPDATE bosses SET status='spawned', next_spawn=${Date.now() - 400000}, auto_reset_at=${Date.now() - 1000}, spawn_group='${SEN}' WHERE id='${vio}'`);
 mark = hooks.length; await cron();
 h = await nextHook(mark, x => x.method === 'PATCH');
-check('auto-reset crosses the line out as auto-reset, with its group', /~~`[^`]+` \| Viorent[^~]*@Senado~~ — auto-reset/.test(desc(h)), desc(h));
+check('auto-reset crosses the line out as auto-reset, with its group', /^-# ~~`[^`]+` Viorent[^~\n]* · Senado~~ ↺ auto-reset$/m.test(desc(h)), desc(h));
 check('auto-reset recorded + group cleared', rows(`SELECT outcome FROM schedule_spawns WHERE boss_id='${vio}'`)[0]?.outcome === 'reset' && rows(`SELECT spawn_group FROM bosses WHERE id='${vio}'`)[0].spawn_group === null);
 
 // ---- quiet cron minute: nothing changed -> no webhook traffic
@@ -204,7 +204,7 @@ mark = hooks.length;
 [s] = await api('POST', `/api/teams/${team}/bosses/${dal}/kill`, { deathTime: startToday - 20 * 60000 }, leader);
 await nextHook(mark, x => x.msg === msg1, 6000);
 const touched = hooks.slice(mark);
-check("kill of last night's spawn edits yesterday's post (and today's)", touched.some(x => x.msg === msg1 && /Lady Dalia~~ — dead/.test(desc(x))) && touched.some(x => x.msg === msg2), touched.map(x => [x.msg, x.method]));
+check("kill of last night's spawn edits yesterday's post (and today's)", touched.some(x => x.msg === msg1 && /Lady Dalia[^~\n]*~~ ✓/.test(desc(x))) && touched.some(x => x.msg === msg2), touched.map(x => [x.msg, x.method]));
 
 // ---- message deleted in Discord -> fresh post
 sql(`UPDATE team_settings SET schedule_msg_id='gone' WHERE team_id='${team}'`);
