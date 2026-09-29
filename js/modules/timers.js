@@ -99,6 +99,7 @@ function render() {
         canManage() ? `<button class="menu-item" data-action="import">Import JSON</button>` : '',
         isPremium() ? `<button class="menu-item" data-action="templates">Boss templates</button>` : '',
         isPremium() ? `<button class="menu-item" data-action="history">Kill history</button>` : '',
+        canManage() ? `<button class="menu-item" data-action="maintenance">Maintenance reset</button>` : '',
         canManage() ? `<button class="menu-item menu-item-danger" data-action="removeall">Remove all timers</button>` : '',
     ].filter(Boolean).join('');
     el.innerHTML = `
@@ -152,6 +153,7 @@ function onClick(e) {
         case 'groups': { const b = byId(id); if (b) import('./spawn-group-dialog.js?v=20260929c').then(m => m.open(b, { onSaved: () => renderList() })); break; }
         case 'import-shot': import('./schedule-import.js?v=20260929c').then(m => m.open({ onDone: () => reload(true) })); break;
         case 'history': showHistory(); break;
+        case 'maintenance': import('./maintenance-reset.js?v=20260930a').then(m => m.open({ onDone: () => reload(true) })); break;
         case 'removeall': removeAll(); break;
         case 'more': btn.closest('.tcard')?.classList.toggle('open'); break;
     }

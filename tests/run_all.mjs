@@ -32,6 +32,7 @@ const SUITES = [
   { name: 'schedule', db: 'schedule', cmd: ['node', join(TESTS, 'api/schedule.test.mjs'), '{key}', WORKER] },
   { name: 'import-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/import.e2e.py'), WORKER] },
   { name: 'boss-edit-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/boss-edit.e2e.py'), WORKER] },
+  { name: 'maintenance-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/maintenance-reset.e2e.py')] },
 ];
 
 const wanted = process.argv.slice(2);

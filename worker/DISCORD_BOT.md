@@ -36,6 +36,11 @@ yesterday's message. If someone deletes the message, the next change posts a fre
 Discord fails at midnight, the next cron minute retries. Role mentions render coloured but never
 ping (`allowed_mentions: { parse: [] }`).
 
+Maintenance reset (Timers → ⋯ → Maintenance reset, `routes/maintenance-reset.js`): every interval
+timer moves to the server-open time; fixed-schedule bosses keep theirs. The rows are marked already
+warned/notified, so the alert channel gets ONE "🔧 Maintenance reset" message instead of a ping per
+boss; the cron still brings them up and auto-resets them as usual.
+
 ## One-time setup (portal + terminal)
 
 1. **Interactions Endpoint URL** — Developer Portal → the app → General Information →

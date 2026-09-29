@@ -319,6 +319,34 @@ check('retried on the next cron minute', !!h && rows(`SELECT schedule_msg_id FRO
   await api('DELETE', `/api/teams/${team}/bosses/${Q}`, null, leader);
 }
 
+// ---- maintenance reset: every interval timer to server open, fixed ones untouched, ONE alert message
+{
+  await api('PUT', `/api/teams/${team}/settings`, { webhookUrl: 'https://discord.com/api/webhooks/555/alertTok', onWarning: true, onSpawn: true }, leader);
+  const [, fx] = await api('POST', `/api/teams/${team}/bosses`, { name: 'Fixed Boss', type: 'fixed', fixedTime: '21:00' }, leader);
+  const fixedAt = () => rows(`SELECT next_spawn FROM bosses WHERE id='${fx.id}'`)[0].next_spawn;
+  const fixedBefore = fixedAt();
+  const interval = () => rows(`SELECT name, next_spawn, status, warned, spawn_notified FROM bosses WHERE team_id='${team}' AND type='interval'`);
+  const url = `/api/teams/${team}/bosses/maintenance-reset`;
+  let [s1] = await api('POST', url, {}, mem);
+  check('maintenance reset: members refused', s1 === 403, s1);
+  [s1] = await api('POST', url, { openAt: Date.now() + 3 * 86400000 }, leader);
+  check('maintenance reset: open time 3 days out refused', s1 === 400, s1);
+
+  const openAt = Date.now() - 60000;
+  let m = hooks.length;
+  const [s2, r2] = await api('POST', url, { openAt }, leader);
+  const iv = interval();
+  check('maintenance reset: every interval timer set to the open time, per-boss alerts muted', s2 === 200 && iv.length >= 2 && r2.reset === iv.length && iv.every(b => b.next_spawn === openAt && b.status === 'waiting' && b.warned === 1 && b.spawn_notified === 1), [s2, r2, iv]);
+  check('maintenance reset: fixed-schedule boss keeps its time', fixedAt() === fixedBefore && r2.kept >= 1, [fixedBefore, fixedAt(), r2]);
+  const sum = await nextHook(m, h => h.hook === '555' && h.method === 'POST');
+  check('maintenance reset: one summary message in the alert channel', /Maintenance reset/.test(sum?.body?.embeds?.[0]?.title || '') && new RegExp(`\\*\\*${r2.reset} bosses\\*\\* spawn now`).test(sum?.body?.embeds?.[0]?.description || ''), sum?.body);
+
+  m = hooks.length; await cron(); await sleep(1500);
+  const up = interval();
+  check('maintenance reset: cron brings them all up with no per-boss pings', up.every(b => b.status === 'spawned') && !hooks.slice(m).some(h => h.hook === '555' && h.method === 'POST'), [up.map(b => b.status), hooks.slice(m).map(h => [h.hook, h.method])]);
+  await api('DELETE', `/api/teams/${team}/bosses/${fx.id}`, null, leader);
+}
+
 // ---- remove webhook -> quiet
 await api('PUT', `/api/teams/${team}/settings`, { webhookSchedule: '' }, leader);
 mark = hooks.length;
