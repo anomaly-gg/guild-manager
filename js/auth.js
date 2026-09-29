@@ -33,6 +33,7 @@ async function init() {
     currentUser = user;
     showUserInfo();
     showTeamList();
+    import('./modules/push.js?v=20260930a').then(m => m.resume()).catch(() => {});   // phone alerts: keep this device registered
     // pricing.html links here with ?upgrade=monthly|lifetime; /discord/added sends ?discord=linked|cancelled|error
     const params = new URLSearchParams(location.search);
     const wanted = params.get('upgrade'), discord = params.get('discord');
@@ -122,6 +123,8 @@ const loginGuest = guard('loginGuest', async function() {
 });
 
 function logout() {
+    const tok = token;
+    import('./modules/push.js?v=20260930a').then(m => m.forget(tok)).catch(() => {});   // this device stops alerting for this account
     _clearApiCache();
     localStorage.removeItem('gm_token');
     token = '';

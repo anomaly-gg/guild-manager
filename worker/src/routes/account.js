@@ -14,6 +14,7 @@ const PERSONAL_ROW_TABLES = [
   ['event_rsvps', 'user_id'], ['event_attendance', 'user_id'], ['member_activity', 'user_id'],
   ['member_availability', 'user_id'], ['member_notes', 'target_user_id'], ['loot_wishlist', 'user_id'],
   ['dkp_bids', 'user_id'], ['join_requests', 'user_id'], ['team_members', 'user_id'],
+  ['push_subs', 'user_id'], ['push_prefs', 'user_id'],
 ];
 
 export const routes = [

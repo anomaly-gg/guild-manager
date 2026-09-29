@@ -26,6 +26,7 @@
     <link rel="stylesheet" href="css/billing.css?v=20260929a">
     <link rel="stylesheet" href="css/attendance.css?v=20260929a">
     <link rel="stylesheet" href="css/schedule-import.css?v=20260929a">
+    <link rel="stylesheet" href="css/push.css?v=20260930a">
 </head>
 <body>
     <header class="app-header">
@@ -43,6 +44,7 @@
                 <div class="user-menu-head"><b id="userMenuName"></b><span class="chip chip-muted" id="userPlan"></span></div>
                 <button class="menu-item" id="upgradeBtn" onclick="showUpgradeModal()">Upgrade to Premium</button>
                 <a class="menu-item" href="pricing.html" target="_blank" rel="noopener">Plans &amp; pricing</a>
+                <button class="menu-item" onclick="import('./js/modules/push.js?v=20260930a').then(m => m.open())">Phone alerts</button>
                 <button class="menu-item" onclick="showAccountModal()">Account &amp; data</button>
                 <button class="menu-item menu-item-danger" onclick="logout()">Log out</button>
             </div>
@@ -54,19 +56,19 @@
     <div id="deathModal"></div>
     <div class="toast-container" id="toastContainer"></div>
 
-    <script src="js/theme-help.js?v=20260929a"></script>
+    <script src="js/theme-help.js?v=20260930a"></script>
     <script src="js/core.js?v=20260929a"></script>
     <script src="js/util.js?v=20260929a"></script>
     <script src="js/api.js?v=20260929a"></script>
-    <script src="js/notifications.js?v=20260929a"></script>
-    <script src="js/auth.js?v=20260929a"></script>
+    <script src="js/notifications.js?v=20260930a"></script>
+    <script src="js/auth.js?v=20260930a"></script>
     <script src="js/billing.js?v=20260929a"></script>
     <script src="js/account.js?v=20260929a"></script>
     <script src="js/teams.js?v=20260929a"></script>
     <script src="js/team-view.js?v=20260929a"></script>
     <script src="js/home.js?v=20260929a"></script>
     <script type="module" src="js/modules/settings.js?v=20260929c"></script>
-    <script src="js/timers.js?v=20260929a"></script>
+    <script src="js/timers.js?v=20260930a"></script>
     <script src="js/main.js?v=20260929a"></script>
     <script type="module" src="js/modules/timers.js?v=20260930a"></script>
     <script type="module" src="js/modules/events.js?v=20260929a"></script>

@@ -241,6 +241,7 @@ async function initDB(db) {
     ['team_settings', 'discord_guild_id'], ['discord_guilds', null], ['attendance_claims', null], ['team_settings', 'attendance_self_checkin'],
     ['schedule_spawns', null], ['team_settings', 'spawn_groups'], ['bosses', 'spawn_group'], ['app_state', null],
     ['discord_cleanup', null], ['team_settings', 'discord_delete_next_min'], ['bosses', 'alert_spawn_msg'], ['bosses', 'alternate_groups'],
+    ['push_subs', null], ['push_prefs', null], ['team_settings', 'maintenance_count'],
   ];
   const tables = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'").all();
   const createSql = Object.fromEntries(tables.results.map(t => [t.name, t.sql || '']));
@@ -373,6 +374,28 @@ async function initDB(db) {
       'ALTER TABLE bosses ADD COLUMN alternate_groups INTEGER DEFAULT 0',
       // carry over the single-server links made before this table existed
       'INSERT OR IGNORE INTO discord_guilds (guild_id, team_id) SELECT discord_guild_id, team_id FROM team_settings WHERE discord_guild_id IS NOT NULL',
+      // phone alerts (M14 web push): one row per browser/device; per-member choices per team
+      `CREATE TABLE IF NOT EXISTS push_subs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        endpoint TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        fails INTEGER NOT NULL DEFAULT 0,
+        pending INTEGER NOT NULL DEFAULT 0,
+        test_at INTEGER
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subs (user_id)',
+      `CREATE TABLE IF NOT EXISTS push_prefs (
+        user_id TEXT NOT NULL,
+        team_id TEXT NOT NULL,
+        soon INTEGER NOT NULL DEFAULT 1,
+        spawned INTEGER NOT NULL DEFAULT 1,
+        groups TEXT,
+        PRIMARY KEY (user_id, team_id)
+      )`,
+      // the last maintenance reset (routes/maintenance-reset.js), so phones show one alert for it
+      'ALTER TABLE team_settings ADD COLUMN maintenance_at INTEGER',
+      'ALTER TABLE team_settings ADD COLUMN maintenance_count INTEGER',
       `CREATE TABLE IF NOT EXISTS join_requests (
         id TEXT PRIMARY KEY,
         team_id TEXT NOT NULL,

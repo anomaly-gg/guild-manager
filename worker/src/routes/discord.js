@@ -22,6 +22,7 @@ import { parseGroups, groupTag, parseLater, cleanLater, MAX_LATER } from '../lib
 import { spawnsInWindow } from '../lib/spawn-projection.js';
 import { refreshSchedulePost } from '../lib/schedule-post.js';
 import { killAlert } from '../lib/boss-alerts.js';
+import { queuePush } from '../lib/push-send.js';
 
 const APP_URL = 'https://anomaly-gg.github.io/guild-manager/';
 
@@ -84,6 +85,7 @@ async function cmdKilled(env, interaction, after) {
   const { nextSpawn, day } = await killBoss(env, { teamId: team.id, boss, deathTime, userId: m.user_id, tz: team.timezone, groups: parseGroups(team.spawn_groups) });
   after(() => refreshSchedulePost(env, team.id, { touchedDay: day }));
   after(() => killAlert(env, { teamId: team.id, boss, by: who.name, at: deathTime, nextSpawn }));
+  after(() => queuePush(null, env, [{ teamId: team.id, kind: 'ended', groupId: boss.spawn_group }]));
   const when = minutesAgo ? ` (${minutesAgo} min ago)` : '';
   return `☠️ **${boss.name}** killed by ${who.name}${when}. Next spawn in ${fmtDuration(nextSpawn - Date.now())} (${clockIn(nextSpawn, team.timezone || 'Asia/Manila')}).${footer(team)}`;
 }

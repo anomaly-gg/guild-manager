@@ -25,14 +25,17 @@ const PY = WIN ? 'python' : 'python3';
 const SUITES = [
   { name: 'schedule-parse', db: null, cmd: ['node', join(TESTS, 'unit/schedule-parse.test.mjs')] },
   { name: 'schedule-format', db: null, cmd: ['node', join(TESTS, 'unit/schedule-format.test.mjs')] },
+  { name: 'push-unit', db: null, cmd: ['node', join(TESTS, 'unit/push.test.mjs')] },
   { name: 'billing', db: 'api', gumroad: true, cmd: [PY, join(TESTS, 'api/billing.test.py'), WORKER] },
   { name: 'presets', db: 'api', cmd: [PY, join(TESTS, 'api/presets.test.py')] },
   { name: 'account', db: 'api', cmd: [PY, join(TESTS, 'api/account.test.py')] },
   { name: 'discord', db: 'discord', cmd: ['node', join(TESTS, 'api/discord.test.mjs'), '{key}', WORKER] },
   { name: 'schedule', db: 'schedule', cmd: ['node', join(TESTS, 'api/schedule.test.mjs'), '{key}', WORKER] },
+  { name: 'push', db: 'push', cmd: ['node', join(TESTS, 'api/push.test.mjs'), WORKER] },
   { name: 'import-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/import.e2e.py'), WORKER] },
   { name: 'boss-edit-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/boss-edit.e2e.py'), WORKER] },
   { name: 'maintenance-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/maintenance-reset.e2e.py')] },
+  { name: 'push-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/push.e2e.py'), WORKER] },
 ];
 
 const wanted = process.argv.slice(2);
@@ -70,7 +73,7 @@ writeFileSync(keyPath, privateKey.export({ format: 'pem', type: 'pkcs8' }));
 const VARS = {
   JWT_SECRET: 'local-test-secret', DISCORD_CLIENT_ID: 'test', DISCORD_BOT_TOKEN: 'test',
   DISCORD_APP_ID: '1488742496660881528', DISCORD_PUBLIC_KEY: pubHex, DISCORD_API: 'http://127.0.0.1:8797',
-  GUMROAD_API: 'http://127.0.0.1:8799',
+  GUMROAD_API: 'http://127.0.0.1:8799', PUSH_TEST_ORIGIN: 'http://127.0.0.1:8797',
   GUMROAD_MONTHLY_URL: 'https://example.gumroad.com/l/gm-monthly', GUMROAD_LIFETIME_URL: 'https://example.gumroad.com/l/gm-lifetime',
   GUMROAD_MONTHLY_PRODUCT_ID: 'vbeeit', GUMROAD_LIFETIME_PRODUCT_ID: 'gm-lifetime',
 };

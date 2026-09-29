@@ -10,6 +10,7 @@ import { PRESETS, findPreset } from '../presets/index.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
 import { killAlert } from '../lib/boss-alerts.js';
 import { parseGroups, cleanLater } from '../lib/spawn-groups.js';
+import { queuePush } from '../lib/push-send.js';
 
 // Is the rule in this edit body the one the boss already has? Resending it (an older client, or a
 // form that sends everything) must not recalculate a running timer; only an actual change does.
@@ -86,6 +87,7 @@ export const routes = [
     queueScheduleRefresh(ctx, env, teamId, { touchedDay: day });
     const alert = killAlert(env, { teamId, boss, by: user.username, at: deathTime, nextSpawn }).catch(e => console.error('kill alert failed:', e));
     if (ctx?.waitUntil) ctx.waitUntil(alert);
+    queuePush(ctx, env, [{ teamId, kind: 'ended', groupId: boss.spawn_group }]);
 
     return json({ ok: true });
   } },

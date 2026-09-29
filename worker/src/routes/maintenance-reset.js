@@ -4,13 +4,15 @@
 //
 // No per-boss alerts: 30+ bosses coming up at once would be 30+ pings, so the rows are marked
 // already warned/notified (the cron still flips them to "up" and runs auto-reset as usual) and
-// the alert channel gets ONE summary message instead.
+// the alert channel gets ONE summary message instead. Phones get one alert too (lib/push-state.js
+// shows the reset as one line while maintenance_at is recent).
 
 import { json, safeJson } from '../lib/http.js';
 import { requireTeamMember } from '../lib/team.js';
 import { webhookCall, isValidDiscordWebhook } from '../lib/discord.js';
 import { clockIn } from '../lib/schedule-format.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
+import { queuePush } from '../lib/push-send.js';
 
 const HOUR = 3600000;
 const EARLIEST = 12 * HOUR;   // server opened up to 12 h ago (reset done late)
@@ -46,10 +48,14 @@ export const routes = [
     const reset = counts.results[0]?.reset || 0, kept = counts.results[0]?.kept || 0;
     if (!reset) return json({ error: 'No respawn-timer bosses to reset. Fixed-schedule bosses keep their times.' }, 400);
 
-    await env.DB.prepare(`UPDATE bosses SET next_spawn = ?, status = 'waiting', spawned_at = NULL, auto_reset_at = NULL,
-        warned = 1, spawn_notified = 1, alert_soon_msg = NULL, alert_spawn_msg = NULL
-      WHERE team_id = ? AND type = 'interval'`).bind(openAt, teamId).run();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE bosses SET next_spawn = ?, status = 'waiting', spawned_at = NULL, auto_reset_at = NULL,
+          warned = 1, spawn_notified = 1, alert_soon_msg = NULL, alert_spawn_msg = NULL
+        WHERE team_id = ? AND type = 'interval'`).bind(openAt, teamId),
+      env.DB.prepare('UPDATE team_settings SET maintenance_at = ?, maintenance_count = ? WHERE team_id = ?').bind(openAt, reset, teamId),
+    ]);
     queueScheduleRefresh(ctx, env, teamId);
+    queuePush(ctx, env, [{ teamId, kind: 'maintenance' }]);
 
     const s = settings.results[0] || {};
     const hook = s.webhook_boss || s.webhook_url;

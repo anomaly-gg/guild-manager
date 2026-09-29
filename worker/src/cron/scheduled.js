@@ -8,6 +8,7 @@ import { syncCommands } from '../lib/discord-commands.js';
 import { runReplyCleanup } from '../lib/discord-cleanup.js';
 import { alertSoon, alertSpawned, alertEnded } from '../lib/boss-alerts.js';
 import { parseGroups, advanceGroups } from '../lib/spawn-groups.js';
+import { cronPush } from '../lib/push-send.js';
 
 export async function handleScheduled(env) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
@@ -20,6 +21,7 @@ export async function handleScheduled(env) {
   const discordSends = [];
   const scheduleTouched = new Map();   // teamId -> day of a spawn that ended this tick (or null)
   const alertIdWrites = [];            // alert message ids to remember, known once the sends finish
+  const pushChanges = [];             // phone alerts: { teamId, kind, groupId } (lib/push-send.js)
 
   // --- BOSSES: merge 'waiting' (warn/spawn) + 'spawned' (auto-reset) into one
   //     query with team_settings JOINed, eliminating per-boss N+1 settings lookups. ---
@@ -47,6 +49,7 @@ export async function handleScheduled(env) {
               }));
             }
             dbWrites.push(env.DB.prepare('UPDATE bosses SET warned = 1 WHERE id = ?').bind(boss.id));
+            pushChanges.push({ teamId: boss.team_id, kind: 'soon', groupId: boss.spawn_group });
             continue;
           }
 
@@ -59,6 +62,8 @@ export async function handleScheduled(env) {
                 alertIdWrites.push(env.DB.prepare("UPDATE bosses SET alert_spawn_msg = ?, alert_soon_msg = NULL WHERE id = ? AND status = 'spawned'").bind(spawn, boss.id));
               }));
             }
+            // spawn_notified already set = alerts muted for this spawn (maintenance reset): no phone alert either
+            if (!boss.spawn_notified) pushChanges.push({ teamId: boss.team_id, kind: 'spawned', groupId: boss.spawn_group });
             dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = ?, auto_reset_at = ?, spawn_notified = 1 WHERE id = ?')
               .bind('spawned', now, now + resetMs, boss.id));
             if (!scheduleTouched.has(boss.team_id)) scheduleTouched.set(boss.team_id, null);
@@ -70,6 +75,7 @@ export async function handleScheduled(env) {
           dbWrites.push(env.DB.prepare('UPDATE bosses SET status = ?, spawned_at = NULL, auto_reset_at = NULL, warned = 0, spawn_notified = 0, spawn_group = ?, later_groups = ?, alert_soon_msg = NULL, alert_spawn_msg = NULL, next_spawn = ? WHERE id = ?')
             .bind('waiting', spawnGroup, laterGroups, nextSpawn, boss.id), ended.stmt);
           scheduleTouched.set(boss.team_id, ended.day);
+          pushChanges.push({ teamId: boss.team_id, kind: 'ended', groupId: boss.spawn_group });
           // No new message: the spawn's alert is edited to say it reset.
           discordSends.push(alertEnded(env, bossHook, boss, tz, { outcome: 'reset', at: now, nextSpawn }));
         }
@@ -154,6 +160,9 @@ export async function handleScheduled(env) {
   if (alertIdWrites.length > 0) {
     try { await env.DB.batch(alertIdWrites); } catch (e) { console.error('Alert id write error:', e); }
   }
+
+  // --- Phone alerts: after the writes above, so a device syncing right away sees the new state. ---
+  await cronPush(env, pushChanges);
 
   // --- Daily schedule posts: new day at 00:00 team time, edits for bosses that changed above. ---
   try {

@@ -20,14 +20,14 @@ Load order matters only for code that runs at load time:
 | `core.js` | API base, session state, `guard()` |
 | `util.js` | generic helpers |
 | `api.js` | `api()` + TTL cache (must precede any caller that runs at load) |
-| `notifications.js` | requests notification permission |
+| `notifications.js` | in-tab boss alerts: one notification per team, updated in place, closed when nothing is up (off when phone alerts are on); DND toggle |
 | `auth.js` | reads `?token=` from an OAuth redirect into localStorage |
 | feature files | function definitions only |
 | `timers.js` | starts the background `setInterval` loops |
 | `home.js` | Home module (next spawns, upcoming events, roster) |
 | `main.js` | `init()` — always last |
 
-Modules (see OVERHAUL.md): `home`, `modules/timers.js` (Timers, ES module; shares `modules/timer-cards.js` with the public `timers.html`), `modules/events.js` (Events, ES module), `modules/roster.js` (Roster, ES module),
+Modules (see OVERHAUL.md): `home`, `modules/timers.js` (Timers, ES module; shares `modules/timer-cards.js` with the public `timers.html`), `modules/events.js` (Events, ES module), `modules/roster.js` (Roster, ES module),, `modules/push.js` (Phone alerts dialog + this device's push subscription; the device side is `/sw.js`), `modules/maintenance-reset.js` (Timers → Maintenance reset).
 `modules/points.js` (Loot & Points, ES module, optional per team; rotation or DKP mode per `team.loot_mode`), `modules/settings.js` (ES module). Shared screens: `auth`, `billing`, `account`, `teams`, `team-view`
 (module nav + sub-views: `MODULES` / `SUB_VIEWS`, `openModule()`, `openSubView()`).
 Cut tabs (chat, announcements, polls, files, wars, matches, performance, recruitment, analytics,

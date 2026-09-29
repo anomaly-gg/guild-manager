@@ -2,18 +2,12 @@
 
 setInterval(() => {
     if (!currentTeamId) return;
+    // In-tab alerts: one notification for the team, kept in step with the timers (js/notifications.js)
+    syncTabAlert(currentTeamId, teamData?.team?.name || 'Guild Manager', teamBosses);
     for (const boss of teamBosses) {
         const remaining = boss.next_spawn - Date.now();
         const isSpawned = remaining <= 0 || boss.status === 'spawned';
         const alertMs = (boss.alert_minutes || 5) * 60000;
-
-        // Desktop notifications (work even when not on timers tab)
-        if (isSpawned) {
-            sendDesktopNotif('Boss Spawned!', `${boss.name} is now available!`, `spawn-${boss.id}`);
-        } else if (remaining > 0 && remaining <= alertMs) {
-            const minLeft = Math.max(1, Math.round(remaining / 60000));
-            sendDesktopNotif('Boss Spawning Soon', `${boss.name} spawns in ${minLeft} min`, `warn-${boss.id}`);
-        }
 
         // Update Home rows (the Timers module runs its own tick)
         if (teamTab !== 'home') continue;

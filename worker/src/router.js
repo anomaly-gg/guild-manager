@@ -16,6 +16,7 @@ import { routes as inviteRoutes } from './routes/invites.js';
 import { routes as bossRoutes } from './routes/bosses.js';
 import { routes as scheduleImportRoutes } from './routes/schedule-import.js';
 import { routes as maintenanceResetRoutes } from './routes/maintenance-reset.js';
+import { routes as pushRoutes, publicRoutes as pushPublicRoutes } from './routes/push.js';
 import { routes as settingsRoutes } from './routes/settings.js';
 import { routes as eventRoutes } from './routes/events.js';
 import { routes as memberRoutes } from './routes/members.js';
@@ -26,9 +27,9 @@ import { routes as accountRoutes } from './routes/account.js';
 import { routes as discordRoutes } from './routes/discord.js';
 import { routes as attendanceRoutes } from './routes/attendance.js';
 
-const PUBLIC_ROUTES = [...authRoutes, ...billingRoutes, ...publicRoutes, ...discordRoutes];
+const PUBLIC_ROUTES = [...authRoutes, ...billingRoutes, ...publicRoutes, ...discordRoutes, ...pushPublicRoutes];
 const PROTECTED_ROUTES = [
-  ...accountRoutes, ...attendanceRoutes, ...teamRoutes, ...inviteRoutes, ...scheduleImportRoutes, ...maintenanceResetRoutes, ...bossRoutes, ...settingsRoutes, ...eventRoutes,
+  ...accountRoutes, ...attendanceRoutes, ...teamRoutes, ...inviteRoutes, ...scheduleImportRoutes, ...maintenanceResetRoutes, ...pushRoutes, ...bossRoutes, ...settingsRoutes, ...eventRoutes,
   ...memberRoutes, ...lootRoutes, ...dkpRoutes,
   ...rotationRoutes,
 ];

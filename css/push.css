@@ -1,0 +1,21 @@
+/* Phone alerts dialog (js/modules/push.js) */
+
+.pa-device { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); margin: 4px 0 8px; }
+.pa-device p { margin: 0; font-size: 0.9rem; line-height: 1.45; min-width: 0; flex: 1 1 220px; }
+.pa-device-on { border-color: color-mix(in srgb, var(--success) 45%, var(--border)); background: var(--success-soft); }
+.pa-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.pa-team { padding: 12px 0; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.pa-team:first-of-type { border-top: 0; padding-top: 4px; }
+.pa-team-name { font-weight: 600; }
+.pa-kinds { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.9rem; }
+.pa-kinds label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.pa-kinds input, .pa-chip input { accent-color: var(--accent); }
+
+.pa-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pa-label { font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+.pa-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--border-strong); font-size: 0.85rem; cursor: pointer; }
+.pa-chip:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.pa-chip input { margin: 0; }

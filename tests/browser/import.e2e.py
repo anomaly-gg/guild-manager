@@ -73,7 +73,9 @@ with sync_playwright() as p:
     pg.wait_for_timeout(300)
     pg.screenshot(path=os.path.join(OUT, 'import_review.png'), full_page=True)
     rows = pg.eval_on_selector_all('.si-row', "els => els.map(e => ({ read: e.querySelector('.si-name').textContent, act: e.querySelector('.si-act').textContent, on: e.querySelector('input[type=checkbox]').checked, target: e.querySelector('.si-target').selectedOptions[0].textContent }))")
-    by = lambda n: [r for r in rows if r['read'].startswith(n)]
+    # OCR noise at the start of a name depends on the times drawn (a stray "]" from the time box,
+    # "lcaruthia" for "Icaruthia"); the app's fuzzy match absorbs it, so look rows up the same way
+    by = lambda n: [r for r in rows if n[1:].lower() in r['read'].lower()]
     check(f'review lists all {len(LINES)} lines', len(rows) == len(LINES), rows)
     check('Araneo -> Update the existing timer', by('Araneo') and by('Araneo')[0]['act'] == 'Update' and by('Araneo')[0]['target'] == 'Araneo', by('Araneo'))
     check('Gareth + Icaruthia -> Add from the game preset', all(by(n) and by(n)[0]['act'] == 'Add' and by(n)[0]['target'] == 'New: ' + n for n in ('Gareth', 'Icaruthia')), [by('Gareth'), by('Icaruthia')])
