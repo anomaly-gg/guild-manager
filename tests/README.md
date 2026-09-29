@@ -14,6 +14,7 @@ cron). Needs Node, Python with `playwright`, and internet for `npx wrangler` and
 | Suite | What it covers |
 |---|---|
 | `schedule-parse` (unit) | Screenshot import parser: dates, AM/PM (incl. OCR misreads), levels, @groups, name matching, which line sets the timer |
+| `schedule-format` (unit) | Daily post fits Discord's 4096-character embed: oldest finished lines cut first, then the latest upcoming, bosses up now always kept |
 | `billing` | Gumroad checkout links, ping, license activation, cron recheck/revoke (mock Gumroad on 8799) |
 | `presets` | Game preset list and adding a preset to a team |
 | `account` | Account export and deletion |

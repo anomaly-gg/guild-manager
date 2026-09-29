@@ -135,5 +135,29 @@ export function dayScheduleText(day, bosses, ended, tz, now = Date.now(), groups
     ...live,
   ].sort((x, y) => x.at - y.at);
   if (!rows.length) return 'No spawns on the schedule for this day.';
-  return scheduleLines(rows, tz).join('\n');
+  return fitScheduleText(rows, tz);
+}
+
+// Discord's cap on an embed description.
+export const EMBED_TEXT_MAX = 4096;
+const FINISHED = new Set(['dead', 'reset']);
+
+// The day's rows as text no longer than `max`. A day too long for one embed (every boss respawning
+// after maintenance) sheds the oldest crossed-out lines first, then the latest spawns still to come,
+// each replaced by a count; bosses up right now always stay. The post is edited on every spawn, kill
+// and auto-reset, so the visible window moves down the day by itself.
+export function fitScheduleText(rows, tz, max = EMBED_TEXT_MAX) {
+  const finished = rows.filter(r => FINISHED.has(r.state));   // rows are in time order: oldest first
+  const upcoming = rows.filter(r => r.state === 'waiting');
+  const render = (dropEarlier, dropLater) => {
+    const gone = new Set([...finished.slice(0, dropEarlier), ...upcoming.slice(upcoming.length - dropLater)]);
+    const lines = scheduleLines(rows.filter(r => !gone.has(r)), tz);
+    if (dropEarlier) lines.unshift(`*… ${dropEarlier} earlier ${dropEarlier === 1 ? 'spawn' : 'spawns'} finished*`);
+    if (dropLater) lines.push(`*… ${dropLater} more coming later today*`);
+    return lines.join('\n');
+  };
+  let text = render(0, 0);
+  for (let e = 1; text.length > max && e <= finished.length; e++) text = render(e, 0);
+  for (let l = 1; text.length > max && l <= upcoming.length; l++) text = render(finished.length, l);
+  return text;
 }
