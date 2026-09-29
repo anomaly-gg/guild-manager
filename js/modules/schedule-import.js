@@ -4,7 +4,7 @@
 // (worker routes/schedule-import.js). ES module; uses shell globals by name
 // (api, showToast, guard, currentTeamId, teamBosses, teamSpawnGroups, teamTz, teamTimeStr).
 
-import { esc } from './timer-cards.js?v=20260929d';
+import { esc } from './timer-cards.js?v=20260929e';
 import { parseScheduleText, buildPlan, laterGroupsFor } from './schedule-parse.js?v=20260929c';
 
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';

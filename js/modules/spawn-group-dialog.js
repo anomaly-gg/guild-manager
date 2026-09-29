@@ -3,7 +3,7 @@
 // the team's list takes it). Saves through PUT /bosses/:id/group. ES module; uses shell globals by
 // name (api, showToast, guard, currentTeamId, teamSpawnGroups, teamTimeStr, teamTz).
 
-import { esc } from './timer-cards.js?v=20260929d';
+import { esc } from './timer-cards.js?v=20260929e';
 
 const SLOTS = ['Next spawn', '2nd spawn', '3rd spawn'];
 const host = () => document.getElementById('deathModal');

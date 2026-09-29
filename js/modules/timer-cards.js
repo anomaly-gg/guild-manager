@@ -4,6 +4,7 @@
 export const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const RING_R = 24;
 const RING_C = 2 * Math.PI * RING_R; // circumference
+const RING_HORIZON = 86400000; // ring starts filling 24h before a spawn
 
 export function esc(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -42,37 +43,6 @@ export function scheduleText(boss) {
     }
 }
 
-// Zone the boss schedules are written in (the team zone; undefined = the device zone).
-let scheduleZone;
-export function setScheduleTimeZone(tz) { scheduleZone = tz || undefined; }
-
-const toMin = (t) => { const [h, m] = String(t || '').split(':').map(Number); return h * 60 + (m || 0); };
-
-// Gap between the previous scheduled slot and next_spawn (ms), or 0 when it can't be worked out.
-// Slots are minutes into the cycle (day or week); next_spawn is placed in that cycle via the team zone.
-export function slotGapMs(boss) {
-    let slots, cycle;
-    switch (boss.type) {
-        case 'fixed': return 86400000;
-        case 'weekly': return 7 * 86400000;
-        case 'twicedaily': slots = (parseJson(boss.biweekly_days, []) || []).map(toMin); cycle = 1440; break;
-        case 'biweekly': slots = (parseJson(boss.biweekly_days, []) || []).map(d => d.day * 1440 + toMin(d.time)); cycle = 10080; break;
-        default: return 0;
-    }
-    slots = slots.filter(Number.isFinite);
-    if (!slots.length || !boss.next_spawn) return 0;
-    let cur;
-    try {
-        const p = new Intl.DateTimeFormat('en-US', { timeZone: scheduleZone, hour12: false, weekday: 'short', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(boss.next_spawn));
-        const g = (t) => p.find(x => x.type === t)?.value;
-        cur = (Number(g('hour')) % 24) * 60 + Number(g('minute'));
-        if (cycle === 10080) cur += DAY.indexOf(g('weekday')) * 1440;
-    } catch { return 0; }
-    if (!Number.isFinite(cur)) return 0;
-    const gaps = slots.map(s => ((cur - s) % cycle + cycle) % cycle).filter(d => d > 0);
-    return (gaps.length ? Math.min(...gaps) : cycle) * 60000;
-}
-
 // State of a boss at `now`.
 //   waiting → soon (inside the alert window) → window (spawn window open, if window_ms) → spawned
 export function bossState(boss, now = Date.now()) {
@@ -87,12 +57,9 @@ export function bossState(boss, now = Date.now()) {
     } else if (remaining <= alertMs) {
         key = 'soon';
     }
-    // ring progress: how much of the wait has elapsed. Scheduled bosses count from the previous
-    // slot, not the last kill (a boss last killed a week ago would otherwise show a full ring).
-    let total = boss.type === 'interval' && boss.interval_ms ? boss.interval_ms
-        : (slotGapMs(boss) || (boss.last_death ? boss.next_spawn - boss.last_death : 86400000));
-    if (!(total > 0)) total = 86400000;
-    const fraction = isUp ? 1 : Math.min(1, Math.max(0, (total - remaining) / total));
+    // ring progress: the same 24h window for every boss, so a fuller ring always means sooner
+    // (per-boss waits made a 4-day boss look nearly full with 12h still to go).
+    const fraction = isUp ? 1 : Math.min(1, Math.max(0, 1 - remaining / RING_HORIZON));
     return { key, remaining, windowLeft, fraction, alertMs };
 }
 

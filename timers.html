@@ -27,7 +27,7 @@
     </main>
 
     <script type="module">
-        import { updateCard, sortBosses, bossState, groupedListHtml, esc, fmtDuration, setScheduleTimeZone } from './js/modules/timer-cards.js?v=20260929d';
+        import { updateCard, sortBosses, bossState, groupedListHtml, esc, fmtDuration } from './js/modules/timer-cards.js?v=20260929e';
         const API = 'https://guild-manager.xpropics.workers.dev';
         const token = new URLSearchParams(location.search).get('t') || '';
         const pub = document.getElementById('pub');
@@ -67,7 +67,6 @@
                 const data = await r.json();
                 if (!r.ok || data.error) { pub.innerHTML = `<div class="pub-error">${esc(data.error || 'This timer page is not available.')}<br><span class="t-dim">The team may have disabled sharing.</span></div>`; return; }
                 team = data.team; bosses = data.bosses || []; groups = data.groups || [];
-                setScheduleTimeZone(team.timezone);
                 render();
             } catch (e) {
                 pub.innerHTML = '<div class="pub-error">Could not load timers. Check your connection and retry.</div>';
