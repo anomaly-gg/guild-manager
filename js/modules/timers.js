@@ -3,7 +3,7 @@
 // (teamBosses, teamData, teamTab, currentTeamId, api, showToast, guard, loadTeamBosses, renderTeamView).
 // Exposed to the shell as window.Timers.
 
-import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20260929c';
+import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, setScheduleTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20260929d';
 
 let search = '';
 let tickTimer = null;
@@ -86,6 +86,7 @@ function listHtml() {
     }
     if (list.length === 0) return '<div class="t-empty card"><div class="t-empty-title">No bosses match “' + esc(search) + '”</div></div>';
     setDisplayTimeZone(displayTz());
+    setScheduleTimeZone(teamTz());
     return groupedListHtml(list, { canManage: canManage(), groups: teamSpawnGroups, teamTimeNote: tzDiffers() ? 'team time' : '' });
 }
 
