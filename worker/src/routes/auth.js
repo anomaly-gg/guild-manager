@@ -61,7 +61,7 @@ export const routes = [
     }, env.JWT_SECRET);
 
     // Redirect to frontend with token
-    const frontendUrl = 'https://anomaly-surround.github.io/guild-manager';
+    const frontendUrl = 'https://anomaly-gg.github.io/guild-manager';
     return Response.redirect(`${frontendUrl}?token=${encodeURIComponent(jwt)}`, 302);
   } },
 
@@ -75,7 +75,7 @@ export const routes = [
   { method: '*', pattern: '/auth/google/callback', handler: async ({ env, url }) => {
     const code = url.searchParams.get('code');
     const error = url.searchParams.get('error');
-    const frontendUrl = 'https://anomaly-surround.github.io/guild-manager';
+    const frontendUrl = 'https://anomaly-gg.github.io/guild-manager';
     if (error || !code) return Response.redirect(frontendUrl, 302);
 
     try {

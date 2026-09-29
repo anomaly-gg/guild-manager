@@ -54,7 +54,7 @@ export const routes = [
     };
     return new Response(JSON.stringify(body, null, 2), {
       status: 200,
-      headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="guild-manager-export.json"', 'Access-Control-Allow-Origin': 'https://anomaly-surround.github.io' },
+      headers: { 'Content-Type': 'application/json', 'Content-Disposition': 'attachment; filename="guild-manager-export.json"', 'Access-Control-Allow-Origin': 'https://anomaly-gg.github.io' },
     });
   } },
 

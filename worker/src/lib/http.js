@@ -14,7 +14,7 @@ export function json(data, status = 200) {
 
 export function corsHeaders() {
   return {
-    'Access-Control-Allow-Origin': 'https://anomaly-surround.github.io',
+    'Access-Control-Allow-Origin': 'https://anomaly-gg.github.io',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'X-Content-Type-Options': 'nosniff',

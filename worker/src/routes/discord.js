@@ -23,7 +23,7 @@ import { spawnsInWindow } from '../lib/spawn-projection.js';
 import { refreshSchedulePost } from '../lib/schedule-post.js';
 import { killAlert } from '../lib/boss-alerts.js';
 
-const APP_URL = 'https://anomaly-surround.github.io/guild-manager/';
+const APP_URL = 'https://anomaly-gg.github.io/guild-manager/';
 
 async function linkedTeam(env, guildId) {
   if (!guildId) return null;
