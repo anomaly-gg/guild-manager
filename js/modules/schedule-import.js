@@ -6,6 +6,7 @@
 
 import { esc } from './timer-cards.js?v=20260929e';
 import { parseScheduleText, buildPlan, laterGroupsFor } from './schedule-parse.js?v=20260929c';
+import { ocrCanvas } from './ocr-image.js?v=20260930a';
 
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 let workerPromise = null;   // one OCR worker per page load; the language data downloads once
@@ -94,7 +95,7 @@ const read = guard('import.read', async (file) => {
         if (m.status === 'recognizing text') status(`<div class="spinner"></div> Reading the screenshot… ${Math.round(m.progress * 100)}%`);
         else if (/load/.test(m.status)) status('<div class="spinner"></div> Getting the text reader ready (first time only)…');
     });
-    const { data } = await w.recognize(file);
+    const { data } = await w.recognize(await ocrCanvas(file));   // scaled + grayscale: see ocr-image.js
     if (!presets) presets = ((await api('GET', '/api/presets')).presets || []).flatMap(p => p.bosses || []);
     const rows = parseScheduleText(data.text);
     plan = buildPlan(rows, { bosses: teamBosses, presets, groups: teamSpawnGroups || [], tz: teamTz() });

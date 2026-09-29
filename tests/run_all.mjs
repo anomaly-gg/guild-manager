@@ -33,6 +33,7 @@ const SUITES = [
   { name: 'schedule', db: 'schedule', cmd: ['node', join(TESTS, 'api/schedule.test.mjs'), '{key}', WORKER] },
   { name: 'push', db: 'push', cmd: ['node', join(TESTS, 'api/push.test.mjs'), WORKER] },
   { name: 'import-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/import.e2e.py'), WORKER] },
+  { name: 'ocr-times-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/ocr-times.e2e.py')] },
   { name: 'boss-edit-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/boss-edit.e2e.py'), WORKER] },
   { name: 'maintenance-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/maintenance-reset.e2e.py')] },
   { name: 'push-e2e', db: 'browser', site: true, cmd: [PY, join(TESTS, 'browser/push.e2e.py'), WORKER] },
