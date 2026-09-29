@@ -88,4 +88,13 @@ check('next: ⏳ countdown on the soonest spawn only', look.some(l => l.endsWith
 check('plain upcoming line: time + bold name, nothing after', look.some(l => /^`[^`]+` \*\*Catena\*\*$/.test(l)), look);
 check('blocks split by a blank line, never a dashed divider', look.includes('') && !look.some(l => /^-{5,}$/.test(l)), look);
 
+// 6. a block is one group's run, however far apart its spawns are; only another group in between
+// (or a boss with no group) starts a new one. His Viserion day, 2026-09-30.
+const V = '<@&111111111111111111>', R = '<@&222222222222222222>';
+const run = scheduleLines([
+  [816, 'Araneo', V], [817, 'Livera', V], [831, 'Undomiel', V], [854, 'Lady Dalia', R],
+  [1043, 'Viorent', R], [1077, 'Ego', R], [1140, 'Motti', ''], [1260, 'Auraq', V], [1262, 'Venatus', V], [1390, 'Baron Braudmore', V],
+].map(([min, name, tag]) => ({ at: at(min), name, tag, state: 'waiting' })), tz);
+const blocksOf = (lines) => lines.join('\n').split('\n\n').map(b => b.split('\n').map(l => l.match(/\*\*(.+?)\*\*/)[1]).join(','));
+check('blocks follow the groups only, never the time gap', JSON.stringify(blocksOf(run)) === JSON.stringify(['Araneo,Livera,Undomiel', 'Lady Dalia,Viorent,Ego', 'Motti', 'Auraq,Venatus,Baron Braudmore']), blocksOf(run));
 console.log(`\n${pass}/${pass + fail} checks passed`);

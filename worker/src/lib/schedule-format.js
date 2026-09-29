@@ -55,8 +55,6 @@ export function bossState(boss, now) {
   return { key: 'waiting', remaining };
 }
 
-// Spawns closer together than this share a block; a wider gap gets a blank line.
-const BLOCK_GAP_MS = 30 * 60000;
 const TIME_WIDTH = 8;   // "11:30 PM"; shorter times are padded with no-break spaces so the code pills line up
 const FINISHED = new Set(['dead', 'reset']);
 
@@ -80,8 +78,9 @@ function rowText(r, tz) {
   return line;
 }
 
-// Rows (already in display order) -> lines, with a blank line between blocks (finished lines stay
-// packed). `headers` adds a bold day line whenever the calendar day changes (rows may carry
+// Rows (already in display order) -> lines. A block = one group's run of spawns, however far apart:
+// a blank line only where the group changes (rows without a group count as one "no group" group).
+// Finished lines stay packed. `headers` adds a bold day line whenever the calendar day changes (rows may carry
 // `header` to override the day label).
 export function scheduleLines(rows, tz, { headers = false } = {}) {
   const out = [];
@@ -92,7 +91,7 @@ export function scheduleLines(rows, tz, { headers = false } = {}) {
       if (day !== null) out.push('');
       out.push(`**${d}**`);
       day = d; prev = null;
-    } else if (prev && !(FINISHED.has(prev.state) && FINISHED.has(r.state)) && r.at - prev.at > BLOCK_GAP_MS) {
+    } else if (prev && !(FINISHED.has(prev.state) && FINISHED.has(r.state)) && (prev.tag || '') !== (r.tag || '')) {
       out.push('');
     }
     prev = r;
