@@ -93,6 +93,9 @@ await api('PUT', `/api/teams/${team}/settings`, { timezone: tz }, leader);
 check('setup: /link G1', /Linked this server/.test(await run('link', [{ name: 'code', value: code }], LEADER)));
 const bossId = (name) => rows(`SELECT id FROM bosses WHERE team_id='${team}' AND name='${name}'`)[0].id;
 const ven = bossId('Venatus'), vio = bossId('Viorent'), dal = bossId('Lady Dalia');
+// Preset timers land tomorrow when the suite runs in the evening, off today's post; pin the two bosses
+// the assign checks read to a few minutes from now (still today unless run in the last minutes before midnight).
+sql(`UPDATE bosses SET next_spawn = ${Date.now() + 5 * 60000}, status='waiting' WHERE id IN ('${ven}', '${vio}')`);
 
 // ---- webhook setting
 let [s, d] = await api('PUT', `/api/teams/${team}/settings`, { webhookSchedule: 'https://example.com/x' }, leader);
