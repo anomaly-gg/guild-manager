@@ -18,7 +18,7 @@ import {
 } from '../lib/discord-interactions.js';
 import { queueReplyCleanup } from '../lib/discord-cleanup.js';
 import { nextSpawnsText, fmtDuration, clockIn } from '../lib/schedule-format.js';
-import { parseGroups, groupTag, parseLater, cleanLater, MAX_LATER } from '../lib/spawn-groups.js';
+import { parseGroups, groupsIn, groupTag, parseLater, cleanLater, MAX_LATER } from '../lib/spawn-groups.js';
 import { spawnsInWindow } from '../lib/spawn-projection.js';
 import { refreshSchedulePost } from '../lib/schedule-post.js';
 import { killAlert } from '../lib/boss-alerts.js';
@@ -68,7 +68,7 @@ async function cmdNext(env, interaction) {
   if (!team) return fail('This server is not linked to a team yet. A leader or officer runs `/link <invite code>`.');
   const count = Math.max(1, Math.min(25, Number(optionValue(interaction, 'count')) || 10));
   const bosses = await env.DB.prepare('SELECT * FROM bosses WHERE team_id = ?').bind(team.id).all();
-  return `**${team.name}** — next spawns\n${nextSpawnsText(bosses.results, team.timezone || 'Asia/Manila', Date.now(), count, parseGroups(team.spawn_groups))}${footer(team)}`;
+  return `**${team.name}** — next spawns\n${nextSpawnsText(bosses.results, team.timezone || 'Asia/Manila', Date.now(), count, groupsIn(parseGroups(team.spawn_groups), interaction.guild_id))}${footer(team)}`;
 }
 
 async function cmdKilled(env, interaction, after) {
@@ -130,7 +130,7 @@ async function cmdAssign(env, interaction, after) {
   const spawn = spawnsInWindow(boss, 0, Infinity, tz, groups).find(s => s.index === which - 1);
   const at = spawn ? clockIn(spawn.at, tz) : '?';
   const label = which === 1 ? 'next spawn' : `${which === 2 ? '2nd' : '3rd'} spawn`;
-  return `**${boss.name}** ${label} (~${at}) → ${group ? groupTag(groups, group.id) : 'no group'}`;
+  return `**${boss.name}** ${label} (~${at}) → ${group ? groupTag(groupsIn(groups, interaction.guild_id), group.id) : 'no group'}`;
 }
 
 // Resolve boss option values (autocomplete gives ids; typed text gives names) -> [{ id, name }] | error string

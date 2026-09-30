@@ -16,11 +16,12 @@ cron). Needs Node, Python with `playwright`, and internet for `npx wrangler` and
 | `schedule-parse` (unit) | Screenshot import parser: dates, AM/PM (incl. OCR misreads), levels, @groups, name matching, which line sets the timer |
 | `schedule-format` (unit) | Daily post fits Discord's 4096-character embed: oldest finished lines cut first, then the latest upcoming, bosses up now always kept |
 | `webhooks-unit` (unit) | Discord channel lists: stored format, single URLs / message ids saved before lists, main-channel fallback, ids kept per channel |
+| `groups-unit` (unit) | Spawn-group roles per Discord server: what is saved, what each server sees, filing roles saved before roles were per server |
 | `billing` | Gumroad checkout links, ping, license activation, cron recheck/revoke (mock Gumroad on 8799) |
 | `presets` | Game preset list and adding a preset to a team |
 | `account` | Account export and deletion |
 | `discord` | Slash commands (signed with a key generated per run), server links, autocomplete, /here + /rollcall, reply auto-delete, private errors |
-| `schedule` | Daily schedule post (post, edit, rollover, retries), spawn groups, repeat spawns, per-spawn groups + alternation, boss alerts edited in place, several channels per alert (add / remove / cap / Free vs Premium), command auto-registration, screenshot import route |
+| `schedule` | Daily schedule post (post, edit, rollover, retries), spawn groups, repeat spawns, per-spawn groups + alternation, boss alerts edited in place, several channels per alert (add / remove / cap / Free vs Premium), group roles per server (post, /next, /assign), command auto-registration, screenshot import route |
 | `import-e2e` (browser) | Draws a Discord-style schedule image, imports it through the real page (OCR -> review -> apply), groups dialog |
 | `boss-edit-e2e` (browser) | Editing a boss's name/location does not reset its timer; the form sends only what changed |
 

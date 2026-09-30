@@ -38,8 +38,9 @@ const mock = http.createServer((req, res) => {
       hooks.push({ method: 'PATCH', msg: m[3], hook: m[1], body: JSON.parse(body) }); return send(200, {});
     }
     m = req.url.match(/^\/webhooks\/(\d+)\/([^/?]+)$/);   // webhook lookup when a channel is added
-    if (req.method === 'GET' && m) return m[1] === '404' ? send(404, { message: 'Unknown Webhook', code: 10015 }) : send(200, { id: m[1], name: 'Hook ' + m[1] });
+    if (req.method === 'GET' && m) return m[1] === '404' ? send(404, { message: 'Unknown Webhook', code: 10015 }) : send(200, { id: m[1], name: 'Hook ' + m[1], guild_id: m[1] === '997' ? 'G2' : 'G1' });
     if (req.method === 'PUT' && /^\/applications\/\d+\/commands$/.test(req.url)) { cmdPuts.push(JSON.parse(body)); return send(200, JSON.parse(body)); }
+    if (req.method === 'GET' && req.url === '/guilds/G2/roles') return send(200, [{ id: 'G2', name: '@everyone', position: 0 }, { id: '6660000001', name: 'KON', position: 2 }]);
     if (req.method === 'GET' && /^\/guilds\/\w+\/roles$/.test(req.url)) {
       return send(200, [{ id: 'G1', name: '@everyone', position: 0 }, { id: '5551234567', name: 'Kongreso', position: 3, color: 15158332 }, { id: '5559876543', name: 'Senado', position: 2 }, { id: '77', name: 'SomeBot', managed: true, position: 1 }]);
     }
@@ -131,7 +132,9 @@ check('duplicate group names refused', s === 400 && /Two groups/.test(d.error ||
 [s] = await api('PUT', `/api/teams/${team}/settings`, { spawnGroups: [{ name: '@Kongreso', roleId: '5551234567' }, { name: 'Senado' }, ...Array.from({ length: 9 }, (_, i) => ({ name: 'G' + i }))] }, leader);
 [, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
 const groups = d.spawnGroups || [];
-check('groups saved: max 8, leading @ stripped, role kept, ids assigned', s === 200 && groups.length === 8 && groups[0].name === 'Kongreso' && groups[0].roleId === '5551234567' && groups[1].roleId === null && groups.every(g => /^[a-z0-9]{4,12}$/.test(g.id)), groups.slice(0, 3));
+check('groups saved: max 8, leading @ stripped, role kept, ids assigned', s === 200 && groups.length === 8 && groups[0].name === 'Kongreso' && groups[1].roleId === null && groups.every(g => /^[a-z0-9]{4,12}$/.test(g.id)), groups.slice(0, 3));
+check('a role saved the old way is filed under the linked server that has it', groups[0].roles?.G1 === '5551234567' && groups[0].roleId === null && JSON.stringify(groups[1].roles) === '{}', groups.slice(0, 2));
+check('channels remember their server', d.webhooks.schedule[0].guildId === 'G1', d.webhooks.schedule);
 const [KON, SEN] = groups.map(g => g.id);
 [s] = await api('PUT', `/api/teams/${team}/settings`, { spawnGroups: groups.slice(0, 2).map((g, i) => i === 1 ? { ...g, name: 'Senado2' } : g) }, leader);
 [, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
@@ -275,6 +278,33 @@ sql(`UPDATE users SET premium = 1 WHERE id='${ids.leader}'`);
   check('removed channel is no longer touched', edited === '997,999', hooks.slice(mark));
   [s] = await dropHook('schedule', '998');
   check('removing an unknown channel: 404', s === 404, s);
+}
+
+// ---- two servers: each schedule channel shows the group roles of its own server
+{
+  check('/link a second server G2', /Linked this server/.test(await run('link', [{ name: 'code', value: code }], LEADER, 'G2')));
+  [, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
+  const byId = Object.fromEntries(d.webhooks.schedule.map(x => [x.id, x.guildId]));
+  check('schedule channels: 999 in G1, 997 in G2', byId['999'] === 'G1' && byId['997'] === 'G2', d.webhooks.schedule);
+  const gs = d.spawnGroups.map(g => g.id === KON ? { ...g, roles: { G1: '5551234567', G2: '6660000001' } } : g);
+  [s] = await api('PUT', `/api/teams/${team}/settings`, { spawnGroups: gs }, leader);
+  [, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
+  check('a role per server saved', s === 200 && JSON.stringify(d.spawnGroups.find(g => g.id === KON).roles) === JSON.stringify({ G1: '5551234567', G2: '6660000001' }), d.spawnGroups);
+  mark = hooks.length;
+  await api('PUT', `/api/teams/${team}/bosses/${ven}/group`, { groupId: KON }, leader);
+  await nextHook(mark, x => x.hook === '997' && x.method === 'PATCH'); await nextHook(mark, x => x.hook === '999' && x.method === 'PATCH'); await sleep(500);
+  const ed = (hk) => hooks.slice(mark).filter(x => x.hook === hk && x.method === 'PATCH').map(desc).find(t => /Venatus/.test(t)) || '';
+  check('G1 channel: Kongreso shows G1\'s role', /Venatus.*<@&5551234567>/.test(ed('999')) && !ed('999').includes('6660000001'), ed('999'));
+  check('G2 channel: Kongreso shows G2\'s role', /Venatus.*<@&6660000001>/.test(ed('997')) && !ed('997').includes('5551234567'), ed('997'));
+  await api('PUT', `/api/teams/${team}/bosses/${vio}/group`, { groupId: SEN }, leader); await sleep(1500);
+  const sen = hooks.filter(x => x.hook === '997' && x.method === 'PATCH').map(desc).at(-1) || '';
+  check('G2 channel: a group with no role there shows as plain @Name', /Viorent.*@Senado/.test(sen), sen);
+  const n1 = await run('next', [{ name: 'count', value: 25 }], MEMBER, 'G1'), n2 = await run('next', [{ name: 'count', value: 25 }], MEMBER, 'G2');
+  check('/next uses the roles of the server it is typed in', /Venatus.*<@&5551234567>/.test(n1) && /Venatus.*<@&6660000001>/.test(n2), [n1.slice(0, 300), n2.slice(0, 300)]);
+  const as = await run('assign', [{ name: 'boss', value: ven }, { name: 'group', value: KON }], LEADER, 'G2');
+  check('/assign replies with the role of its server', /<@&6660000001>/.test(as), as);
+  [, d] = await api('GET', `/api/teams/${team}/discord-roles`, null, leader);
+  check('discord-roles lists both servers', d.servers?.length === 2 && d.servers.some(x => x.guildId === 'G2' && x.roles.map(r => r.name).join() === 'KON'), d.servers);
 }
 
 // ---- boss alerts: two messages per spawn, edited in place (lib/boss-alerts.js)

@@ -48,13 +48,13 @@ export async function webhookCall(env, hook, method, msgId, body) {
   }
 }
 
-// Does this webhook exist? -> { ok: true, name } | { ok: false, status } (status 0 = Discord unreachable)
+// Does this webhook exist? -> { ok: true, name, guildId } | { ok: false, status } (status 0 = Discord unreachable)
 export async function webhookInfo(env, hook) {
   calls++;
   try {
     const r = await fetch(hostFor(env, hook));
     if (!r.ok) return { ok: false, status: r.status };
     const d = await r.json().catch(() => ({}));
-    return { ok: true, name: typeof d.name === 'string' ? d.name.slice(0, 80) : null };
+    return { ok: true, name: typeof d.name === 'string' ? d.name.slice(0, 80) : null, guildId: /^\w{1,32}$/.test(d.guild_id || '') ? d.guild_id : null };
   } catch { return { ok: false, status: 0 }; }
 }

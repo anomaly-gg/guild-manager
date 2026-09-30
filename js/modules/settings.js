@@ -3,8 +3,8 @@
 // Only fields the worker actually consumes are shown here — if a setting has no consumer, it is cut.
 
 import { esc } from './timer-cards.js?v=20260923e';
-import * as ScheduleCard from './schedule-settings.js?v=20260930b';
-import * as Webhooks from './webhook-list.js?v=20260930b';
+import * as ScheduleCard from './schedule-settings.js?v=20260930c';
+import * as Webhooks from './webhook-list.js?v=20260930c';
 
 const TIMEZONES = ['Asia/Manila', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Australia/Sydney', 'Pacific/Auckland'];
 
@@ -107,7 +107,8 @@ function slashCard() {
 function discordCard() {
     const hooks = settings.webhooks || {};
     const max = team()?.limits?.webhooks || 1;
-    const list = (kind, label, opts = {}) => Webhooks.html(kind, hooks[kind] || [], { label, max, ...opts });
+    const servers = Object.fromEntries((settings.discordGuilds || []).map(g => [g.guildId, g.name || 'Server ' + g.guildId]));
+    const list = (kind, label, opts = {}) => Webhooks.html(kind, hooks[kind] || [], { label, max, servers, ...opts });
     return `<section class="card s-card"><h3>Discord alerts</h3><p class="s-desc">Create a webhook in each Discord channel that should get alerts (Channel settings → Integrations → Webhooks) and paste it here.${max > 1 ? ` Every alert is posted in each channel of its list, up to ${max}.` : ''}</p>
         ${list('url', 'Alert channels', { upsell: true })}
         <div class="t-h3">Send alerts for</div>

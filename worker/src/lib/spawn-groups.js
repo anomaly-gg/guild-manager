@@ -1,12 +1,18 @@
 // Spawn groups: the alliance guilds / parties an officer hands spawns to (2-8 per team).
-// Stored as JSON on team_settings.spawn_groups: [{ id, name, roleId?, rotation? }]; rotation: false =
+// Stored as JSON on team_settings.spawn_groups: [{ id, name, roles, roleId, rotation? }]; rotation: false =
 // the group never takes a turn in alternation (e.g. an "ALL" group for everyone-bosses).
+// roles = the group's Discord role in each linked server { guildId: roleId }: role ids are per server,
+// so a group can be @Viserion in one and @VIS in another. roleId = a role saved before roles were per
+// server (its server unknown); Settings files it under its server (fileLegacyRoles) when it opens.
 // Per boss, groups are kept per SPAWN: bosses.spawn_group = the next spawn, bosses.later_groups =
 // JSON list for the spawns after it (2nd, 3rd, ...). When a spawn ends its group moves to the
 // schedule_spawns row and the list moves up (advanceGroups). bosses.alternate_groups = when nobody
 // picked a group for the next spawn, take the group after the one that just ended.
 
 export const MAX_GROUPS = 8;
+const MAX_SERVERS = 10;
+const SNOWFLAKE = /^\d{5,25}$/;
+const GUILD = /^\w{1,32}$/;   // a server id, only ever compared with the server a command or channel is in
 
 export function parseGroups(raw) {
   try { const g = typeof raw === 'string' ? JSON.parse(raw) : raw; return Array.isArray(g) ? g : []; } catch { return []; }
@@ -20,11 +26,37 @@ export function cleanGroups(list) {
     const name = String(g?.name || '').trim().replace(/^@/, '').slice(0, 30);
     if (!name) continue;
     const id = /^[a-z0-9]{4,12}$/.test(g?.id || '') ? g.id : crypto.randomUUID().replace(/-/g, '').slice(0, 8);
-    const roleId = /^\d{5,25}$/.test(String(g?.roleId || '')) ? String(g.roleId) : null;
+    const roleId = SNOWFLAKE.test(String(g?.roleId || '')) ? String(g.roleId) : null;
+    const roles = Object.fromEntries(Object.entries(g?.roles && typeof g.roles === 'object' ? g.roles : {})
+      .filter(([guild, role]) => GUILD.test(guild) && SNOWFLAKE.test(String(role || ''))).slice(0, MAX_SERVERS).map(([guild, role]) => [guild, String(role)]));
     if (out.some(x => x.name.toLowerCase() === name.toLowerCase())) return `Two groups are called "${name}"`;
-    out.push({ id, name, roleId, ...(g?.rotation === false ? { rotation: false } : {}) });
+    out.push({ id, name, roles, roleId: roleId && !Object.values(roles).includes(roleId) ? roleId : null, ...(g?.rotation === false ? { rotation: false } : {}) });
   }
   return out;
+}
+
+// The groups as one Discord server sees them: roleId = the group's role in that server, or null (plain
+// @Name). A group whose role was saved before roles were per server keeps using it everywhere, as it did.
+// guildId null = a channel whose server is not known yet.
+export function groupsIn(groups, guildId) {
+  return groups.map(g => {
+    const perServer = g.roles && Object.keys(g.roles).length;
+    return { ...g, roleId: (guildId && g.roles?.[guildId]) || (perServer ? null : g.roleId) || null };
+  });
+}
+
+// File roles saved before roles were per server under the server that has them.
+// servers = [{ guildId, roles: [{ id }] }] -> { groups, changed }; a role no server has stays as it is.
+export function fileLegacyRoles(groups, servers) {
+  let changed = false;
+  const out = groups.map(g => {
+    if (!g.roleId) return g;
+    const home = servers.find(s => s.roles.some(r => r.id === g.roleId));
+    if (!home) return g;
+    changed = true;
+    return { ...g, roles: { ...(g.roles || {}), [home.guildId]: (g.roles || {})[home.guildId] || g.roleId }, roleId: null };
+  });
+  return { groups: out, changed };
 }
 
 // A Discord role renders as its coloured @mention (never pings: allowed_mentions is always empty);

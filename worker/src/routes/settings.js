@@ -4,6 +4,7 @@
 import { json, safeJson } from '../lib/http.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { KINDS, publicHooks } from '../lib/webhooks.js';
+import { backfillSettings } from '../lib/settings-backfill.js';
 import { parseRoles } from './events.js';
 import { lootModeFor } from '../lib/rotation.js';
 import { createToken } from '../lib/auth.js';
@@ -55,7 +56,7 @@ export const routes = [
     const member = await requireTeamMember(env, teamId, user.userId);
     if (!member) return json({ error: 'Not a member' }, 403);
 
-    const settings = await env.DB.prepare('SELECT * FROM team_settings WHERE team_id = ?').bind(teamId).first();
+    const settings = await backfillSettings(env, teamId, await env.DB.prepare('SELECT * FROM team_settings WHERE team_id = ?').bind(teamId).first());
     return json({
       onWarning: settings?.on_warning ?? true,
       onSpawn: settings?.on_spawn ?? true,

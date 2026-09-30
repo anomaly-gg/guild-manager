@@ -1,6 +1,7 @@
 // A team's Discord channels per alert kind. Each team_settings column holds up to
-// PLANS.<plan>.webhooks channels as JSON [{ u: url, n: webhook name }]; a column saved before
-// channels became lists holds one bare URL, read as a one-channel list.
+// PLANS.<plan>.webhooks channels as JSON [{ u: url, n: webhook name, g: server (guild) id }]; a column
+// saved before channels became lists holds one bare URL, read as a one-channel list. The server
+// decides which spawn-group roles a channel's schedule post uses (lib/spawn-groups.js groupsIn).
 // Messages we keep editing (boss alerts, the daily schedule post) are stored per channel as JSON
 // { <webhook id>: <message id> }; a bare id saved before that belongs to the first channel.
 
@@ -11,7 +12,7 @@ export const PREMIUM_ONLY = ['boss', 'events'];   // their own channels; Free se
 
 export const hookId = (url) => /\/webhooks\/(\d+)\//.exec(url)?.[1] || '';
 
-// -> [{ u, n }], valid Discord webhooks only
+// -> [{ u, n, g }], valid Discord webhooks only
 export function parseHooks(value) {
   if (!value) return [];
   let list = [{ u: String(value).trim(), n: null }];
@@ -19,10 +20,10 @@ export function parseHooks(value) {
   return (Array.isArray(list) ? list : []).filter(h => h && typeof h.u === 'string' && isValidDiscordWebhook(h.u));
 }
 export const hookUrls = (value) => parseHooks(value).map(h => h.u);
-export const storeHooks = (list) => list.length ? JSON.stringify(list.map(h => ({ u: h.u, n: h.n || null }))) : null;
+export const storeHooks = (list) => list.length ? JSON.stringify(list.map(h => ({ u: h.u, n: h.n || null, g: h.g || null }))) : null;
 
-// For Settings: never the URL (the token in it lets anyone post), only the id and name.
-export const publicHooks = (value) => parseHooks(value).map(h => ({ id: hookId(h.u), name: h.n || null }));
+// For Settings: never the URL (the token in it lets anyone post), only the id, name and server.
+export const publicHooks = (value) => parseHooks(value).map(h => ({ id: hookId(h.u), name: h.n || null, guildId: h.g || null }));
 
 // Boss and event alerts go to their own channels when set, otherwise to the main webhook's.
 export function alertHooks(settings, kind) {

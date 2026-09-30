@@ -49,7 +49,7 @@ export const routes = [
     if (!info.ok && info.status >= 400 && info.status < 500 && info.status !== 429) {
       return json({ error: 'Discord does not know this webhook. It may have been deleted; copy its URL again.' }, 400);
     }
-    const entry = { u: url, n: info.name || null };
+    const entry = { u: url, n: info.name || null, g: info.guildId || null };
     if (at < 0) list.push(entry); else list[at] = entry;
 
     const sets = [`${KINDS[kind]} = ?`], vals = [storeHooks(list)];

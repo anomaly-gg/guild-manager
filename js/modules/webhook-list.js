@@ -14,10 +14,19 @@ const REMOVE = {
     schedule: (last) => `Stop the schedule post in this channel? Its messages stay in Discord but stop updating.${last ? '' : ' The other channels keep theirs.'}`,
 };
 
-// hooks = [{ id, name }] from GET settings; max = channels allowed on this plan
-export function html(kind, hooks, { label, max, upsell }) {
+// A channel's server: its name when linked. Schedule channels in a server that is not linked show
+// plain group names (no roles to pick there), so say so.
+function where(kind, h, servers) {
+    if (!h.guildId) return '';
+    if (servers[h.guildId]) return ` <span class="t-dim">· ${esc(servers[h.guildId])}</span>`;
+    return kind === 'schedule' ? ' <span class="t-dim">· server not linked, group names without roles</span>' : '';
+}
+
+// hooks = [{ id, name, guildId }] from GET settings; max = channels allowed on this plan;
+// servers = linked servers { guildId: name }
+export function html(kind, hooks, { label, max, upsell, servers = {} }) {
     const rows = hooks.length
-        ? hooks.map(h => `<div class="t-row t-row-sm wh-row"><span>${esc(h.name || 'Webhook')} <span class="t-dim">#${esc(h.id.slice(-4))}</span></span>
+        ? hooks.map(h => `<div class="t-row t-row-sm wh-row"><span>${esc(h.name || 'Webhook')} <span class="t-dim">#${esc(h.id.slice(-4))}</span>${where(kind, h, servers)}</span>
             <span class="wh-actions"><button class="btn btn-sm btn-secondary" data-action="wh-test" data-kind="${kind}" data-id="${esc(h.id)}">Test</button><button class="btn btn-sm btn-secondary" data-action="wh-remove" data-kind="${kind}" data-id="${esc(h.id)}" data-last="${hooks.length === 1 ? 1 : ''}">Remove</button></span></div>`).join('')
         : `<div class="t-row t-row-sm"><span class="t-dim">${EMPTY[kind]}</span></div>`;
     const add = hooks.length < max
