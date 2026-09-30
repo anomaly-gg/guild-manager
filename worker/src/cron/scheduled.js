@@ -2,7 +2,7 @@
 
 import { sendDiscord, discordCalls } from '../lib/discord.js';
 import { alertHooks } from '../lib/webhooks.js';
-import { calcNextSpawn } from '../lib/spawn.js';
+import { calcNextSpawn, autoResetMs } from '../lib/spawn.js';
 import { recheckLicenses } from '../lib/gumroad.js';
 import { spawnEndStmt, cronScheduleRefresh } from '../lib/schedule-post.js';
 import { syncCommands } from '../lib/discord-commands.js';
@@ -35,7 +35,7 @@ export async function handleScheduled(env) {
   try {
     const bosses = await env.DB.prepare(`
       SELECT b.*,
-             ts.webhook_url, ts.webhook_boss, ts.on_warning, ts.on_spawn, ts.timezone, ts.spawn_groups AS team_groups
+             ts.webhook_url, ts.webhook_boss, ts.on_warning, ts.on_spawn, ts.timezone, ts.spawn_groups AS team_groups, ts.maintenance_at
       FROM bosses b
       LEFT JOIN team_settings ts ON ts.team_id = b.team_id
       WHERE b.status IN ('waiting', 'spawned')
@@ -61,7 +61,7 @@ export async function handleScheduled(env) {
           }
 
           if (remaining <= 0) {
-            const resetMs = boss.window_ms > 0 ? boss.window_ms : (boss.auto_reset_minutes ?? 5) * 60000;
+            const resetMs = autoResetMs(boss, boss.maintenance_at);
             // Spawn alerts on: a new (pinging) message. Off: the "soon" message, if any, turns into it.
             if (!boss.spawn_notified && bossHooks.length && (boss.on_spawn || boss.alert_soon_msg)) {
               discordSends.push(alertSpawned(env, bossHooks, boss, tz, { post: !!boss.on_spawn }).then(({ spawn }) => {

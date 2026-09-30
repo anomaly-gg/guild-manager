@@ -302,6 +302,7 @@ sql(`UPDATE users SET premium = 1 WHERE id='${ids.leader}'`);
   check('alert 1: "spawning soon" posted and its id kept', /Alert Boss — spawning soon/.test(title(soon)), title(soon));
   const shrink = al(m0).find(h => h.method === 'PATCH' && h.msg === soon?.msg);
   check('alert 2: "has spawned" posted; the soon message shrinks to one grey line', /Alert Boss has spawned/.test(title(up)) && /^-# ⏰ Alert Boss spawned at /.test(shrink?.body?.content || '') && shrink?.body?.embeds?.length === 0, [title(up), shrink?.body]);
+  check('a normal spawn auto-resets after its own 5 minutes', rows(`SELECT auto_reset_at - spawned_at AS w FROM bosses WHERE id='${A}'`)[0].w === 5 * 60000, rows(`SELECT auto_reset_at, spawned_at FROM bosses WHERE id='${A}'`));
   check('spawn message id stored, soon id cleared', msgOf(aRow().alert_spawn_msg, '555') === up?.msg && aRow().alert_soon_msg === null, aRow());
   m = hooks.length;
   await api('POST', `/api/teams/${team}/bosses/${A}/kill`, {}, leader);
@@ -434,10 +435,12 @@ sql(`UPDATE users SET premium = 1 WHERE id='${ids.leader}'`);
   check('maintenance reset: every interval timer set to the open time, per-boss alerts muted', s2 === 200 && iv.length >= 2 && r2.reset === iv.length && iv.every(b => b.next_spawn === openAt && b.status === 'waiting' && b.warned === 1 && b.spawn_notified === 1), [s2, r2, iv]);
   check('maintenance reset: fixed-schedule boss keeps its time', fixedAt() === fixedBefore && r2.kept >= 1, [fixedBefore, fixedAt(), r2]);
   const sum = await nextHook(m, h => h.hook === '555' && h.method === 'POST');
-  check('maintenance reset: one summary message in the alert channel', /Maintenance reset/.test(sum?.body?.embeds?.[0]?.title || '') && new RegExp(`\\*\\*${r2.reset} bosses\\*\\* spawn now`).test(sum?.body?.embeds?.[0]?.description || ''), sum?.body);
+  check('maintenance reset: one summary message in the alert channel', /Maintenance reset/.test(sum?.body?.embeds?.[0]?.title || '') && new RegExp(`\\*\\*${r2.reset} bosses\\*\\* spawn now`).test(sum?.body?.embeds?.[0]?.description || '') && /wait 30 minutes before they auto-reset/.test(sum?.body?.embeds?.[0]?.description || ''), sum?.body);
 
   m = hooks.length; await cron(); await sleep(1500);
   const up = interval();
+  const waits = rows(`SELECT auto_reset_at - spawned_at AS w FROM bosses WHERE team_id='${team}' AND type='interval'`).map(r => r.w);
+  check('maintenance reset: the bosses it brought up wait 30 minutes before auto-reset (clearing them all takes a while)', waits.length && waits.every(w => w === 30 * 60000), waits);
   check('maintenance reset: cron brings them all up with no per-boss pings', up.every(b => b.status === 'spawned') && !hooks.slice(m).some(h => h.hook === '555' && h.method === 'POST'), [up.map(b => b.status), hooks.slice(m).map(h => [h.hook, h.method])]);
   await api('DELETE', `/api/teams/${team}/bosses/${fx.id}`, null, leader);
 }

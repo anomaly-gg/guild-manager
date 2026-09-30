@@ -48,6 +48,15 @@ export function calcNextSpawn(boss, fromTime, tz) {
   return fromTime + 3600000;
 }
 
+// How long a boss that is up waits for a kill before it auto-resets. A maintenance reset brings
+// every respawn-timer boss up at once (next_spawn = the team's maintenance_at) and the guild clears
+// them one by one, the last ~30 min after server open, so those spawns wait at least that long.
+export const MAINTENANCE_RESET_MS = 30 * 60000;
+export function autoResetMs(boss, maintenanceAt) {
+  const ms = boss.window_ms > 0 ? boss.window_ms : (boss.auto_reset_minutes ?? 5) * 60000;
+  return maintenanceAt && boss.next_spawn === maintenanceAt ? Math.max(ms, MAINTENANCE_RESET_MS) : ms;
+}
+
 // The spawn after the one at `t`, assuming it is killed when it comes up (schedule projection).
 export function spawnAfter(boss, t, tz) {
   switch (boss.type) {

@@ -5,13 +5,15 @@
 // No per-boss alerts: 30+ bosses coming up at once would be 30+ pings, so the rows are marked
 // already warned/notified (the cron still flips them to "up" and runs auto-reset as usual) and
 // each alert channel gets ONE summary message instead. Phones get one alert too (lib/push-state.js
-// shows the reset as one line while maintenance_at is recent).
+// shows the reset as one line while maintenance_at is recent). Clearing them all takes longer than
+// the usual 5-minute auto-reset, so these spawns wait MAINTENANCE_RESET_MS (lib/spawn.js autoResetMs).
 
 import { json, safeJson } from '../lib/http.js';
 import { requireTeamMember } from '../lib/team.js';
 import { webhookCall } from '../lib/discord.js';
 import { alertHooks } from '../lib/webhooks.js';
 import { clockIn } from '../lib/schedule-format.js';
+import { MAINTENANCE_RESET_MS } from '../lib/spawn.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
 import { queuePush } from '../lib/push-send.js';
 
@@ -21,7 +23,8 @@ const LATEST = 24 * HOUR;     // or opens within the next day (reset set up befo
 
 function summary(count, kept, openAt, now, tz) {
   const when = openAt <= now + 60000 ? 'now' : `at ${clockIn(openAt, tz)}`;
-  const lines = [`**${count} boss${count === 1 ? '' : 'es'}** spawn ${when} (server open). Log kills as usual; timers run from each kill.`];
+  const lines = [`**${count} boss${count === 1 ? '' : 'es'}** spawn ${when} (server open). Log kills as usual; timers run from each kill.`,
+    `-# Unkilled ones wait ${MAINTENANCE_RESET_MS / 60000} minutes before they auto-reset, so there is time to clear them all.`];
   if (kept) lines.push(`-# ${kept} fixed-schedule boss${kept === 1 ? '' : 'es'} keep${kept === 1 ? 's' : ''} ${kept === 1 ? 'its' : 'their'} usual time.`);
   return {
     embeds: [{ title: '🔧 Maintenance reset', description: lines.join('\n'), color: 0x5865f2, footer: { text: 'Guild Manager' } }],
