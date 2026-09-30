@@ -36,3 +36,5 @@
 @media (max-width: 560px) {
     .si-row { grid-template-columns: auto 64px minmax(0, 1fr) auto; grid-template-areas: "check time read act" ". target target target" ". extra extra extra"; }
 }
+.si-banner { margin: 10px 0; padding: 8px 10px; font-size: 0.85rem; line-height: 1.45; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--warn) 8%, var(--surface-2)); color: var(--text-muted); }
+.si-banner b { color: var(--text); }

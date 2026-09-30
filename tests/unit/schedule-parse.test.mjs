@@ -1,6 +1,6 @@
 // Screenshot import parser + planner (js/modules/schedule-parse.js), fed the text Tesseract read
 // from a real Discord schedule post (note the misread "lcaruthia"). No server needed.
-import { parseScheduleText, buildPlan, matchName, zonedToEpoch, laterGroupsFor } from '../../js/modules/schedule-parse.js';
+import { parseScheduleText, buildPlan, matchName, zonedToEpoch, laterGroupsFor, markPreMaintenance } from '../../js/modules/schedule-parse.js';
 import { LORD_NINE } from '../../worker/src/presets/lordnine.js';
 
 const OCR = `29 September 2026
@@ -76,4 +76,29 @@ const misread = parseScheduleText('4:17 an | Lady Dalia (85) | @Kongreso\n4:32 A
 check('OCR misreads of AM/PM ("an", "An", "p.m.", "arn") and doubled pipes', misread.length === 5 && misread[0].h === 4 && misread[0].name === 'Lady Dalia'
   && misread[1].name === 'Araneo' && misread[1].tag === 'Kongreso' && misread[2].h === 22 && misread[3].h === 21 && misread[4].h === 11 && misread[4].name === 'Metus', misread);
 check('unknown @tag flagged, not guessed', (() => { const [r] = parseScheduleText('1:00 PM | Venatus | @Pugs'); const p = buildPlan([r], { bosses: [], presets: [], groups, tz, now }); return p[0].groupUnknown && !p[0].group; })());
+
+// ---- lines from before a maintenance reset (2026-09-30: an import put 7 bosses back on old times)
+{
+  const H = 3600000, open = 1000 * H, now = open + 20 * 60000, m = { at: open };
+  const iv = (id, hours, next = open) => ({ id, name: id, type: 'interval', interval_ms: hours * H, next_spawn: next });
+  const fx = (id, next = open) => ({ id, name: id, type: 'fixed', next_spawn: next });
+  const line = (boss, at, action = 'update') => ({ boss, at, action, checked: true });
+  const plan = [
+    line(iv('araneo', 24), open - 28 * 60000),                 // 1:32 PM vs 2:00 PM open: before maintenance ended
+    line(iv('catena', 35), open + 9.9 * H),                   // 11:54 PM: after open, but too soon for a kill after open
+    line(iv('ego', 21), open + 21 * H + 10 * 60000),          // killed 10 min after open elsewhere: a real time
+    line(fx('auraq'), open - H),                              // fixed boss, time before open
+    line(fx('motti'), open + 5 * H),                          // fixed boss, its next time after open
+    line(iv('baron', 32, open + 32 * H), open + 3 * H),       // killed after open already: not on the reset, left to the officer
+    line(null, open - H, 'add'),                              // a new boss: nothing to protect
+  ];
+  const n = markPreMaintenance(plan, m, now);
+  const marked = plan.filter(p => p.preMaintenance).map(p => p.boss.id).join();
+  check('pre-maintenance lines on reset bosses are marked and unticked', n === 3 && marked === 'araneo,catena,auraq' && plan.filter(p => p.preMaintenance).every(p => !p.checked && /before the maintenance reset/.test(p.reason)), [n, marked]);
+  check('times a kill after open can give, killed bosses and new bosses stay ticked', plan[2].checked && plan[4].checked && plan[5].checked && plan[6].checked);
+  const old = [line(iv('araneo', 24), open - 28 * 60000)];
+  check('a reset more than a day old is history: nothing marked', markPreMaintenance(old, m, open + 25 * H) === 0 && old[0].checked);
+  check('no reset yet: nothing marked', markPreMaintenance([line(iv('a', 24), open - H)], { at: null }, now) === 0);
+}
+
 console.log(`\n${pass}/${pass + fail} checks passed`);

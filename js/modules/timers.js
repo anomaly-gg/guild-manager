@@ -151,7 +151,7 @@ function onClick(e) {
         case 'templates': showTemplates(); break;
         case 'presets': showPresets(); break;
         case 'groups': { const b = byId(id); if (b) import('./spawn-group-dialog.js?v=20260929c').then(m => m.open(b, { onSaved: () => renderList() })); break; }
-        case 'import-shot': import('./schedule-import.js?v=20260930a').then(m => m.open({ onDone: () => reload(true) })); break;
+        case 'import-shot': import('./schedule-import.js?v=20260930b').then(m => m.open({ onDone: () => reload(true) })); break;
         case 'history': showHistory(); break;
         case 'maintenance': import('./maintenance-reset.js?v=20260930b').then(m => m.open({ onDone: () => reload(true) })); break;
         case 'removeall': removeAll(); break;

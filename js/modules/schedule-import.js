@@ -5,12 +5,13 @@
 // (api, showToast, guard, currentTeamId, teamBosses, teamSpawnGroups, teamTz, teamTimeStr).
 
 import { esc } from './timer-cards.js?v=20260929e';
-import { parseScheduleText, buildPlan, laterGroupsFor } from './schedule-parse.js?v=20260929c';
+import { parseScheduleText, buildPlan, laterGroupsFor, markPreMaintenance } from './schedule-parse.js?v=20260930a';
 import { ocrCanvas } from './ocr-image.js?v=20260930a';
 
 const TESSERACT = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 let workerPromise = null;   // one OCR worker per page load; the language data downloads once
 let plan = [], presets = null, onDone = null;
+let reset = null;   // { at, count } when lines were unticked as from before a maintenance reset
 
 const host = () => document.getElementById('deathModal');
 const $ = (sel) => host()?.querySelector(sel);
@@ -40,7 +41,7 @@ async function ocrWorker(progress) {
 
 export function open(opts = {}) {
     onDone = opts.onDone || null;
-    plan = [];
+    plan = []; reset = null;
     host().innerHTML = `
         <div class="modal-backdrop" data-close="1">
             <div class="card modal-card modal-wide si-card">
@@ -97,8 +98,13 @@ const read = guard('import.read', async (file) => {
     });
     const { data } = await w.recognize(await ocrCanvas(file));   // scaled + grayscale: see ocr-image.js
     if (!presets) presets = ((await api('GET', '/api/presets')).presets || []).flatMap(p => p.bosses || []);
+    // Fresh timers + the last maintenance reset: lines from before it must not undo it.
+    const fresh = await api('GET', `/api/teams/${currentTeamId}/bosses`);
+    const bosses = fresh.error ? teamBosses : fresh.bosses || [];
     const rows = parseScheduleText(data.text);
-    plan = buildPlan(rows, { bosses: teamBosses, presets, groups: teamSpawnGroups || [], tz: teamTz() });
+    plan = buildPlan(rows, { bosses, presets, groups: teamSpawnGroups || [], tz: teamTz() });
+    const count = markPreMaintenance(plan, fresh.maintenance);
+    reset = count ? { at: fresh.maintenance.at, count } : null;
     status('');
     renderReview(data.text);
 });
@@ -122,7 +128,7 @@ function rowHtml(p, i) {
     const group = p.group ? `<span class="chip chip-accent">@${esc(p.group.name)}</span>`
         : p.groupUnknown ? `<span class="si-warn" title="No spawn group with this name (Settings → Daily schedule post)">@${esc(p.row.tag)}?</span>` : '';
     const rule = p.needsRule && !p.boss ? `<label class="si-rule">respawn <input type="number" min="1" max="999" data-rule="${i}" value="${p.ruleHours || ''}" placeholder="h"> h</label>` : '';
-    const note = p.reason ? `<span class="si-note">${esc(p.reason)}</span>` : p.fuzzy ? '<span class="si-note si-warn">check the match</span>' : '';
+    const note = p.reason ? `<span class="si-note ${p.preMaintenance ? 'si-warn' : ''}">${esc(p.reason)}</span>` : p.fuzzy ? '<span class="si-note si-warn">check the match</span>' : '';
     return `<div class="si-row ${p.checked ? '' : 'off'}">
         <input type="checkbox" data-check="${i}" ${p.checked ? 'checked' : ''}>
         <span class="si-time">${esc(teamTimeStr(p.at))}<small>${esc(day)}</small></span>
@@ -142,7 +148,8 @@ function renderReview(rawText) {
         updateApply();
         return;
     }
-    el.innerHTML = `<div class="si-list">${plan.map(rowHtml).join('')}</div>
+    const banner = reset ? `<div class="si-banner">A maintenance reset set these bosses to spawn at <b>${esc(teamTimeStr(reset.at))}</b> (server open). <b>${reset.count}</b> line${reset.count !== 1 ? 's' : ''} in this screenshot ${reset.count !== 1 ? 'are' : 'is'} from before maintenance, so ${reset.count !== 1 ? 'they are' : 'it is'} unticked and the reset stays. Tick any you still want to import.</div>` : '';
+    el.innerHTML = `${banner}<div class="si-list">${plan.map(rowHtml).join('')}</div>
         <p class="tf-help">Times are team time (${esc(teamTz())}). A boss listed more than once: its first upcoming line sets the timer, the later lines set the groups of its following spawns. Untick anything that looks wrong.</p>
         <details class="si-raw"><summary>What was read</summary><pre>${esc(rawText)}</pre></details>`;
     updateApply();

@@ -99,6 +99,29 @@ with sync_playwright() as p:
     pg.screenshot(path=os.path.join(OUT, 'groups_dialog.png'))
     pg.click('#sgForm button[type="submit"]'); pg.wait_for_timeout(1200)
     chip = pg.text_content(f'[data-action="groups"][data-id="{gar}"]')
+
+    # ---- after a maintenance reset, the same (now old) screenshot must not undo it
+    open_at = int((now + timedelta(hours=2)).timestamp() * 1000)
+    rs, rr = api('POST', f'/api/teams/{team}/bosses/maintenance-reset', {'openAt': open_at, 'from': open_at - 3 * 3600000}, tok)
+    check('maintenance reset for the second import', rs == 200, rr)
+    pg.evaluate("openModule('timers')"); pg.wait_for_timeout(1200)
+    pg.click('[data-role="menu"] summary'); pg.click('[data-action="import-shot"]')
+    pg.wait_for_selector('.si-drop')
+    pg.set_input_files('[data-role="file"]', shot)
+    pg.wait_for_selector('.si-row', timeout=120000); pg.wait_for_timeout(300)
+    pg.screenshot(path=os.path.join(OUT, 'import_after_reset.png'), full_page=True)
+    rows = pg.eval_on_selector_all('.si-row', "els => els.map(e => ({ read: e.querySelector('.si-name').textContent, on: e.querySelector('input[type=checkbox]').checked, note: (e.querySelector('.si-note') || {}).textContent || '' }))")
+    stale = [r for r in rows if 'before the maintenance reset' in r['note']]
+    banner = pg.text_content('.si-banner') if pg.locator('.si-banner').count() else ''
+    names = sorted(n for n in ('Araneo', 'Gareth', 'Lady Dalia') if any(n[1:].lower() in r['read'].lower() for r in stale))
+    check('lines from before the reset: Araneo, Gareth, Lady Dalia unticked and noted', names == ['Araneo', 'Gareth', 'Lady Dalia'] and not any(r['on'] for r in stale), rows)
+    check('banner explains why they are unticked', 'maintenance reset' in banner and 'unticked' in banner, banner)
+    if pg.is_enabled('[data-act="apply"]'): pg.click('[data-act="apply"]'); pg.wait_for_timeout(1500)
+    else: pg.click('[data-act="close"]')
+    _, b3 = api('GET', f'/api/teams/{team}/bosses', None, tok)
+    kept = {b['name']: b['next_spawn'] for b in b3['bosses'] if b['name'] in ('Araneo', 'Gareth', 'Lady Dalia')}
+    check('the reset holds: they still spawn at server open', set(kept.values()) == {open_at}, kept)
+    check('no page errors (second import)', not errors, errors)
     br.close()
 _, b2 = api('GET', f'/api/teams/{team}/bosses', None, tok)
 g2 = next(b for b in b2['bosses'] if b['name'] == 'Gareth')

@@ -142,6 +142,28 @@ export function buildPlan(rows, { bosses, presets, groups, tz, now = Date.now(),
     return plan;
 }
 
+// After a maintenance reset, a screenshot of the schedule from before maintenance would put the old
+// times back on the bosses the reset brought up (how 7 bosses lost their reset on 2026-09-30). A line
+// is from before maintenance when its boss is still on the reset (next spawn = server open) and its
+// time cannot come from a kill after the server opened: earlier than open + the respawn time for a
+// respawn timer, earlier than open for a fixed schedule. Those lines start unticked; the officer can
+// still tick them. maintenance = { at: server open } from GET /bosses; a reset over a day old is history.
+// -> number of lines marked
+export const MAINTENANCE_RECENT_MS = 24 * 3600000;
+export function markPreMaintenance(plan, maintenance, now = Date.now()) {
+    const open = maintenance?.at;
+    if (!open || now - open > MAINTENANCE_RECENT_MS) return 0;
+    let n = 0;
+    for (const p of plan) {
+        const b = p.boss;
+        if (p.action !== 'update' || !b || b.next_spawn !== open) continue;
+        if (p.at >= open + (b.type === 'interval' ? b.interval_ms || 0 : 0)) continue;
+        Object.assign(p, { checked: false, preMaintenance: true, reason: 'from before the maintenance reset' });
+        n++;
+    }
+    return n;
+}
+
 // Groups of a boss's later lines, in time order, for the import request (up to 3).
 export function laterGroupsFor(plan, first) {
     return plan.filter(p => p !== first && p.key === first.key && p.action === 'later' && p.checked)
