@@ -53,7 +53,7 @@ first pass, the tabs just disappear.
 | Teams | 1 | unlimited |
 | Members per team | 10 | 100 |
 | Boss timers | 15 | unlimited |
-| Discord webhooks | 1 | per-channel (timers / events / announcements) |
+| Discord alert channels | 1 per alert (main + schedule post) | up to 3 per alert, plus boss and event alerts in channels of their own (M17) |
 | Loot & Points module | included | included, plus wishlist, auctions, decay |
 | Boss templates, kill history | – | ✓ |
 | Public timer page | – | ✓ |
@@ -123,4 +123,4 @@ Not doing: adding features to win an argument nobody has had. Post in 2–3 guil
 three real guilds for a week, let their questions reorder this list.
 
 | M15 | **Rally attendance** (from the user's guild 2026-09-24: daily Discord threads of screenshots, admins verify by eye and re-type into a doc, points computed by hand) | CODE DONE 2026-09-24: `/here <boss> <proof> [boss2] [note]` (member self check-in, screenshot copied to R2 + SHA-256), `/rollcall <boss> <@members>` (officer, approved on the spot); `attendance_claims` with fraud flags — no kill of that boss logged that day, sent >3 h after the kill, duplicate image, many claims today; one claim per member per boss per day; Events → **Attendance** view = review queue (thumbnails, flags, approve/reject, "approve all unflagged") + points summary 7/30/90 d; approval writes `dkp_ledger` lines "Rally: …"; Settings → Rally attendance: points per boss, self check-in on/off, trust mode (auto-approve unflagged). `lib/attendance.js`, `routes/attendance.js`, `js/modules/attendance.js`. Suite 54/54. PENDING: re-run the register script (2 new commands), live try from the guild |
-
+| M17 | **Alerts in several Discord channels** (user 2026-09-30: "each alert can only take 1 webhook… more is better") | CODE DONE 2026-09-30: every webhook field (main, boss, events, schedule) is a list — Free 1, Premium 3 (`PLANS.*.webhooks` in `lib/limits.js`; 3 = what the free plan's 50 subrequests/cron run can carry: 3 bosses up in one minute × 2 calls × 3 channels). Stored in the same columns as JSON `[{u, n}]`, a bare URL from before reads as a one-channel list (no migration). Edited messages (boss alerts, schedule post) keep ids per channel `{webhookId: msgId}`; a bare id from before = first channel. Schedule post claims missing channels with `''` (no double post), a hiccup frees the channel for the next minute (no more "hand the day back"), a 4xx keeps `''` until the channel is added again. Adding asks Discord first (typo/deleted webhook refused, webhook name shown). Cron counts Discord calls; phone pushes get what is left of the 50 (min 5, max 30, rest next minute). `lib/webhooks.js`, `routes/webhooks.js` (add / remove / test), `js/modules/webhook-list.js`; the PUT settings webhook fields and `/settings/test` are gone. Suites webhooks-unit 17, schedule 81 |

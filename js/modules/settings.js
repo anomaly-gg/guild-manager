@@ -3,7 +3,8 @@
 // Only fields the worker actually consumes are shown here — if a setting has no consumer, it is cut.
 
 import { esc } from './timer-cards.js?v=20260923e';
-import * as ScheduleCard from './schedule-settings.js?v=20260929b';
+import * as ScheduleCard from './schedule-settings.js?v=20260930a';
+import * as Webhooks from './webhook-list.js?v=20260930a';
 
 const TIMEZONES = ['Asia/Manila', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Australia/Sydney', 'Pacific/Auckland'];
 
@@ -42,7 +43,7 @@ function render() {
     const el = root();
     if (!el) return;
     el.innerHTML = canManage()
-        ? `<div class="settings">${teamCard()}${invitesCard()}${modulesCard()}${discordCard()}${ScheduleCard.cardHtml(settings)}${slashCard()}${attendanceCard()}${eventsCard()}${team()?.loot_mode === 'dkp' ? pointsCard() : ''}${publicCard()}${iconCard()}${leadershipCard()}</div>`
+        ? `<div class="settings">${teamCard()}${invitesCard()}${modulesCard()}${discordCard()}${ScheduleCard.cardHtml(settings, team()?.limits?.webhooks || 1)}${slashCard()}${attendanceCard()}${eventsCard()}${team()?.loot_mode === 'dkp' ? pointsCard() : ''}${publicCard()}${iconCard()}${leadershipCard()}</div>`
         : `<div class="settings"><section class="card s-card"><h3>Settings</h3><p class="s-desc">Only officers and the leader can change team settings. Ask them if something needs adjusting.</p></section>${leaveCard()}</div>`;
     el.onclick = onClick;
     el.onchange = onChange;
@@ -51,7 +52,6 @@ function render() {
 
 const toggle = (id, label, checked, { auto, help, disabled } = {}) => `
     <label class="s-toggle ${disabled ? 'disabled' : ''}"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} ${auto ? `data-auto="${auto}"` : ''}><span>${label}${help ? `<small>${help}</small>` : ''}</span></label>`;
-const saved = (isSet) => isSet ? '<em class="s-saved">saved</em>' : '';
 const gate = (inner, what) => isPremium() ? inner : `<div class="s-gate"><div class="s-gate-body">${inner}</div><div class="s-gate-bar"><span>${what} is a Premium feature.</span><button class="btn btn-sm btn-primary" data-action="upgrade">Upgrade</button></div></div>`;
 
 function teamCard() {
@@ -105,19 +105,11 @@ function slashCard() {
 }
 
 function discordCard() {
-    const hookField = (id, label, isSet) => `
-        <label class="tf-field tf-wide"><span>${label} ${saved(isSet)}</span>
-            <div class="s-inline"><input type="url" id="${id}" placeholder="${isSet ? 'Saved. Paste a new URL to replace it.' : 'https://discord.com/api/webhooks/...'}" autocomplete="off">${isSet ? `<button class="btn btn-sm btn-secondary" data-action="clear-channel" data-which="${id === 'sHookBoss' ? 'Boss' : 'Events'}">Clear</button>` : ''}</div>
-        </label>`;
-    return `<section class="card s-card"><h3>Discord alerts</h3><p class="s-desc">Create a webhook in your Discord channel (Channel settings → Integrations → Webhooks) and paste it here.</p>
-        <div class="tform">
-            <label class="tf-field tf-wide"><span>Webhook URL ${saved(settings.webhookUrlSet)}</span><input type="url" id="sHook" placeholder="${settings.webhookUrlSet ? 'Saved. Paste a new URL to replace it.' : 'https://discord.com/api/webhooks/...'}" autocomplete="off"></label>
-            <div class="tf-actions tf-wide" style="justify-content:flex-start">
-                <button class="btn btn-primary btn-sm" data-action="save-webhook">Save</button>
-                <button class="btn btn-secondary btn-sm" data-action="test-webhook" ${settings.webhookUrlSet ? '' : 'disabled'}>Send a test</button>
-                ${settings.webhookUrlSet ? '<button class="btn btn-secondary btn-sm" data-action="clear-webhook">Remove</button>' : ''}
-            </div>
-        </div>
+    const hooks = settings.webhooks || {};
+    const max = team()?.limits?.webhooks || 1;
+    const list = (kind, label, opts = {}) => Webhooks.html(kind, hooks[kind] || [], { label, max, ...opts });
+    return `<section class="card s-card"><h3>Discord alerts</h3><p class="s-desc">Create a webhook in each Discord channel that should get alerts (Channel settings → Integrations → Webhooks) and paste it here.${max > 1 ? ` Every alert is posted in each channel of its list, up to ${max}.` : ''}</p>
+        ${list('url', 'Alert channels', { upsell: true })}
         <div class="t-h3">Send alerts for</div>
         <div class="s-toggles s-toggles-row">
             ${toggle('sOnWarning', 'Boss warning', settings.onWarning !== false, { auto: 'notif' })}
@@ -129,9 +121,8 @@ function discordCard() {
             <label class="tf-field"><span>Event reminder <em>minutes before</em></span><input type="number" id="sReminder" min="1" max="120" value="${settings.eventReminderMinutes || 15}"></label>
             <div class="tf-actions"><button class="btn btn-secondary btn-sm" data-action="save-notif">Save</button></div>
         </div>
-        <div class="t-h3">Per-channel webhooks <span class="chip chip-accent">Premium</span></div>
-        ${gate(`<div class="tform">${hookField('sHookBoss', 'Boss alerts', settings.webhookBossSet)}${hookField('sHookEvents', 'Event alerts', settings.webhookEventsSet)}
-            <div class="tf-actions tf-wide"><button class="btn btn-primary btn-sm" data-action="save-channels">Save</button></div></div>`, 'Sending boss and event alerts to different channels')}
+        <div class="t-h3">Separate boss and event channels <span class="chip chip-accent">Premium</span></div>
+        ${gate(`${list('boss', 'Boss alerts')}${list('events', 'Event alerts')}`, 'Sending boss and event alerts to their own channels')}
     </section>`;
 }
 
@@ -262,27 +253,10 @@ function onClick(ev) {
 const act = guard('settings.act', async (a, btn) => {
     switch (a) {
         case 'save-team': await put({ teamDescription: val('sDesc').trim(), timezone: val('sTz') }, 'Team saved'); break;
-        case 'save-webhook': {
-            const url = val('sHook').trim();
-            if (!url) { showToast('Paste a webhook URL first'); return; }
-            if (await put({ webhookUrl: url }, 'Webhook saved')) await reload();
-            break;
-        }
-        case 'test-webhook': { const r = await api('POST', `/api/teams/${T()}/settings/test`); showToast(r.ok ? 'Test sent to Discord' : r.error || 'Failed'); break; }
+        case 'wh-add': case 'wh-test': case 'wh-remove': if (await Webhooks.act(a, btn, root())) await reload(); break;
         case 'discord-add': { const d = await api('GET', `/api/teams/${T()}/discord-link`); if (d.error) { showToast(d.error); break; } window.location.href = d.url; break; }
         case 'discord-unlink': if (confirm('Unlink this Discord server? Slash commands stop working there until it is linked again.')) { if (await put({ unlinkDiscordGuild: btn.dataset.guild }, 'Server unlinked')) await reload(); } break;
-        case 'clear-webhook': if (confirm('Remove the Discord webhook? Alerts stop until you add one again.')) { if (await put({ webhookUrl: '' }, 'Webhook removed')) await reload(); } break;
         case 'save-notif': await put({ onWarning: on('sOnWarning'), onSpawn: on('sOnSpawn'), onEvent: on('sOnEvent'), onLoot: on('sOnLoot'), eventReminderMinutes: Math.min(120, Math.max(1, parseInt(val('sReminder')) || 15)) }, 'Alert settings saved'); break;
-        case 'save-channels': {
-            const body = {};
-            const boss = val('sHookBoss').trim(), events = val('sHookEvents').trim();
-            if (boss) body.webhookBoss = boss;
-            if (events) body.webhookEvents = events;
-            if (!Object.keys(body).length) { showToast('Paste a webhook URL first'); return; }
-            if (await put(body, 'Channel webhooks saved')) await reload();
-            break;
-        }
-        case 'clear-channel': { const which = btn.dataset.which; if (confirm(`Clear the ${which.toLowerCase()} webhook? Alerts fall back to the main one.`)) { if (await put({ ['webhook' + which]: '' }, `${which} webhook cleared`)) await reload(); } break; }
         case 'save-autodelete': await put({ discordAutoDelete: on('sAutoDel'), discordDeleteActionMin: Math.max(1, Math.min(14, parseInt(val('sDelAction')) || 1)), discordDeleteNextMin: Math.max(1, Math.min(14, parseInt(val('sDelNext')) || 5)) }, 'Reply clean-up saved'); break;
         case 'save-attendance': await put({ attendancePoints: Math.max(0, Math.min(100, parseInt(val('sAttPts')) || 0)), attendanceSelfCheckin: on('sAttSelf'), attendanceAutoApprove: on('sAttAuto') }, 'Attendance settings saved'); break;
         case 'save-events': {

@@ -1,23 +1,18 @@
-// Settings → "Daily schedule post" card: the schedule webhook and the spawn groups officers hand
-// spawns to. Rendered by settings.js (cardHtml) and wired here (mount); saves go through the
-// settings PUT that settings.js passes in. ES module; uses shell globals by name (api, showToast).
+// Settings → "Daily schedule post" card: the schedule channels (webhook-list.js; their buttons are
+// handled by settings.js) and the spawn groups officers hand spawns to. Rendered by settings.js
+// (cardHtml) and wired here (mount); saves go through the settings PUT that settings.js passes in.
+// ES module; uses shell globals by name (api, showToast).
 
 import { esc } from './timer-cards.js?v=20260929a';
+import * as Webhooks from './webhook-list.js?v=20260930a';
 
 const MAX_GROUPS = 8;
 let roleServers = null;   // [{ guildId, name, roles: [{ id, name, color }] }] from linked servers, loaded once per open
 
-export function cardHtml(settings) {
-    const set = settings.webhookScheduleSet;
+export function cardHtml(settings, max) {
     return `<section class="card s-card" id="sScheduleCard"><h3>Daily schedule post</h3>
         <p class="s-desc">Posts the day's boss schedule to a Discord channel at 00:00 team time and keeps that one message up to date: a spawn is crossed out when it is killed or auto-resets, and restarted timers appear as new lines. Use its own channel so the post stays easy to find.</p>
-        <div class="tform">
-            <label class="tf-field tf-wide"><span>Schedule webhook ${set ? '<em class="s-saved">saved</em>' : ''}</span><input type="url" id="sHookSchedule" placeholder="${set ? 'Saved. Paste a new URL to move the post to another channel.' : 'https://discord.com/api/webhooks/...'}" autocomplete="off"></label>
-            <div class="tf-actions tf-wide" style="justify-content:flex-start">
-                <button class="btn btn-primary btn-sm" data-sched="save-hook">${set ? 'Replace' : 'Save and post today'}</button>
-                ${set ? '<button class="btn btn-secondary btn-sm" data-sched="clear-hook">Remove</button>' : ''}
-            </div>
-        </div>
+        ${Webhooks.html('schedule', settings.webhooks?.schedule || [], { label: 'Schedule channels', max, upsell: true })}
         <div class="t-h3">Spawn groups</div>
         <p class="s-desc">The alliance guilds or parties you hand spawns to. Assign a spawn on the Timers page or with <code>/assign</code> in Discord; the post and <code>/next</code> show it at the end of the line. Pick a Discord role to show it as that role's coloured tag (nobody gets pinged). Untick <b>Takes turns</b> for a group like "ALL" that bosses set to alternate should never land on.</p>
         <div class="sg-list" data-role="sg-list">${(settings.spawnGroups || []).map(rowHtml).join('')}</div>
@@ -80,17 +75,6 @@ export function mount(card, settings, { put, reload }) {
         const btn = e.target.closest('[data-sched]');
         if (!btn) return;
         switch (btn.dataset.sched) {
-            case 'save-hook': {
-                const url = card.querySelector('#sHookSchedule').value.trim();
-                if (!url) { showToast('Paste a webhook URL first'); return; }
-                if (await put({ webhookSchedule: url }, "Saved. Today's schedule is being posted.")) await reload();
-                break;
-            }
-            case 'clear-hook':
-                if (confirm('Stop the daily schedule post? The messages already in Discord stay there but stop updating.')) {
-                    if (await put({ webhookSchedule: '' }, 'Schedule post stopped')) await reload();
-                }
-                break;
             case 'add-group':
                 if (list.querySelectorAll('.sg-row').length >= MAX_GROUPS) { showToast(`Up to ${MAX_GROUPS} groups`); return; }
                 list.insertAdjacentHTML('beforeend', rowHtml());

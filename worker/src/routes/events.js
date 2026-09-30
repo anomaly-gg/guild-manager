@@ -3,6 +3,7 @@
 
 import { json, safeJson } from '../lib/http.js';
 import { sendDiscord } from '../lib/discord.js';
+import { alertHooks } from '../lib/webhooks.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 
 export const DEFAULT_RSVP_ROLES = ['Tank', 'Healer', 'DPS', 'Support'];
@@ -104,10 +105,10 @@ export const routes = [
 
     // Discord notification
     const settings = await env.DB.prepare('SELECT * FROM team_settings WHERE team_id = ?').bind(teamId).first();
-    const eventHook = settings?.webhook_events || settings?.webhook_url;
-    if (eventHook) {
+    const eventHooks = alertHooks(settings, 'events');
+    if (eventHooks.length) {
       const date = new Date(eventTime).toLocaleString('en-US', { timeZone: settings.timezone || 'Asia/Manila' });
-      await sendDiscord(eventHook, `New Event: ${title}`,
+      await sendDiscord(env, eventHooks, `New Event: ${title}`,
         `**${title}** scheduled for **${date}**\nCreated by ${user.username}${body.description ? '\n\n' + body.description : ''}`,
         5793266);
     }

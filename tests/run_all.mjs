@@ -26,6 +26,7 @@ const SUITES = [
   { name: 'schedule-parse', db: null, cmd: ['node', join(TESTS, 'unit/schedule-parse.test.mjs')] },
   { name: 'schedule-format', db: null, cmd: ['node', join(TESTS, 'unit/schedule-format.test.mjs')] },
   { name: 'push-unit', db: null, cmd: ['node', join(TESTS, 'unit/push.test.mjs')] },
+  { name: 'webhooks-unit', db: null, cmd: ['node', join(TESTS, 'unit/webhooks.test.mjs')] },
   { name: 'billing', db: 'api', gumroad: true, cmd: [PY, join(TESTS, 'api/billing.test.py'), WORKER] },
   { name: 'presets', db: 'api', cmd: [PY, join(TESTS, 'api/presets.test.py')] },
   { name: 'account', db: 'api', cmd: [PY, join(TESTS, 'api/account.test.py')] },

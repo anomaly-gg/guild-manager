@@ -1,10 +1,12 @@
-// Daily boss schedule post: one Discord webhook message per team-clock day, posted at 00:00 and
-// edited in place whenever a spawn comes up, is killed or auto-resets, or a timer/group changes.
-// State lives on team_settings (webhook_schedule, schedule_day + schedule_msg_id for today's
-// message, schedule_prev_day + schedule_prev_msg_id for yesterday's); finished spawns are
-// recorded in schedule_spawns so the day's post can keep them, crossed out.
+// Daily boss schedule post: one Discord webhook message per team-clock day in each schedule
+// channel, posted at 00:00 and edited in place whenever a spawn comes up, is killed or auto-resets,
+// or a timer/group changes. State lives on team_settings (webhook_schedule = the channels,
+// schedule_day + schedule_msg_id for today's messages, schedule_prev_day + schedule_prev_msg_id for
+// yesterday's; message ids per channel, lib/webhooks.js); finished spawns are recorded in
+// schedule_spawns so the day's post can keep them, crossed out.
 
-import { isValidDiscordWebhook, webhookCall } from './discord.js';
+import { webhookCall } from './discord.js';
+import { hookUrls, hookId, parseMsgs } from './webhooks.js';
 import { dayKey, weekdayLabel, dayScheduleText } from './schedule-format.js';
 import { parseGroups } from './spawn-groups.js';
 
@@ -45,28 +47,28 @@ function payload(teamName, day, text, tz, now) {
 // 4xx other than 429 = the webhook or message is gone/invalid; anything else is worth retrying.
 const permanent = (status) => status >= 400 && status < 500 && status !== 429;
 
-// Bring the team's schedule post up to date. `touchedDay` = the day of a spawn that just finished,
-// so yesterday's message is edited too when a late-night spawn is killed after midnight.
+// Bring the team's schedule post up to date in each of its channels. `touchedDay` = the day of a
+// spawn that just finished, so yesterday's message is edited too when a late-night spawn is killed
+// after midnight.
 export async function refreshSchedulePost(env, teamId, { touchedDay } = {}) {
   const s = await env.DB.prepare('SELECT t.name AS team_name, ts.* FROM team_settings ts JOIN teams t ON t.id = ts.team_id WHERE ts.team_id = ?').bind(teamId).first();
-  if (!s?.webhook_schedule || !isValidDiscordWebhook(s.webhook_schedule)) return;
+  const hooks = hookUrls(s?.webhook_schedule);
+  if (!hooks.length) return;
   const tz = s.timezone || 'Asia/Manila';
   const now = Date.now();
   const today = dayKey(now, tz);
-  let msgId = s.schedule_msg_id, prevDay = s.schedule_prev_day, prevMsg = s.schedule_prev_msg_id;
+  let raw = s.schedule_msg_id, prevDay = s.schedule_prev_day, prevRaw = s.schedule_prev_msg_id;
 
   if (s.schedule_day !== today) {
-    // New day: claim the rollover so two refreshes running at once cannot both post.
+    // New day: claim the rollover so two refreshes running at once cannot both do it.
     const claim = await env.DB.prepare('UPDATE team_settings SET schedule_prev_day = schedule_day, schedule_prev_msg_id = schedule_msg_id, schedule_day = ?, schedule_msg_id = NULL WHERE team_id = ? AND schedule_day IS ?')
       .bind(today, teamId, s.schedule_day).run();
     if (!claim.meta?.changes) return;
-    prevDay = s.schedule_day; prevMsg = s.schedule_msg_id; msgId = null;
-  } else if (!msgId) {
-    return;   // today's post is being made right now, or failed permanently (saving the webhook again retries)
+    prevDay = s.schedule_day; prevRaw = s.schedule_msg_id; raw = null;
   }
 
   const days = [today];
-  if (touchedDay && touchedDay !== today && touchedDay === prevDay && prevMsg) days.push(touchedDay);
+  if (touchedDay && touchedDay !== today && touchedDay === prevDay && prevRaw) days.push(touchedDay);
   const [bosses, ended] = await env.DB.batch([
     env.DB.prepare('SELECT * FROM bosses WHERE team_id = ?').bind(teamId),
     env.DB.prepare(`SELECT * FROM schedule_spawns WHERE team_id = ? AND day IN (${days.map(() => '?').join(',')})`).bind(teamId, ...days),
@@ -74,22 +76,36 @@ export async function refreshSchedulePost(env, teamId, { touchedDay } = {}) {
   const groups = parseGroups(s.spawn_groups);
   const body = (day) => payload(s.team_name, day, dayScheduleText(day, bosses.results, ended.results.filter(e => e.day === day), tz, now, groups), tz, now);
 
-  if (msgId) {
-    const r = await webhookCall(env, s.webhook_schedule, 'PATCH', msgId, body(today));
-    if (!r.ok && r.status === 404) msgId = null;   // someone deleted the message: post a fresh one
+  // Edit today's message where a channel has one ('' = being posted right now, or refused for good).
+  const msgs = parseMsgs(raw, hooks);
+  const gone = [];
+  await Promise.all(hooks.map(async (hook) => {
+    const msgId = msgs[hookId(hook)];
+    if (!msgId) return;
+    const r = await webhookCall(env, hook, 'PATCH', msgId, body(today));
+    if (!r.ok && r.status === 404) gone.push(hook);   // someone deleted the message: post a fresh one
+  }));
+  const toPost = [...hooks.filter(h => !(hookId(h) in msgs)), ...gone];
+  if (toPost.length) await postToday(env, teamId, today, raw, msgs, toPost, body(today));
+  if (days.length > 1) {
+    const prev = parseMsgs(prevRaw, hooks);
+    await Promise.all(hooks.map(hook => prev[hookId(hook)] && webhookCall(env, hook, 'PATCH', prev[hookId(hook)], body(touchedDay))));
   }
-  if (!msgId) {
-    const r = await webhookCall(env, s.webhook_schedule, 'POST', null, body(today));
-    if (r.ok && r.id) {
-      await env.DB.prepare('UPDATE team_settings SET schedule_msg_id = ? WHERE team_id = ? AND schedule_day = ?').bind(r.id, teamId, today).run();
-    } else if (!permanent(r.status)) {
-      // Discord hiccup: give the day back so the next cron minute tries again.
-      await env.DB.prepare('UPDATE team_settings SET schedule_day = ?, schedule_msg_id = ? WHERE team_id = ? AND schedule_day = ? AND schedule_msg_id IS NULL')
-        .bind(prevDay, prevMsg, teamId, today).run();
-      return;
-    }
-  }
-  if (days.length > 1) await webhookCall(env, s.webhook_schedule, 'PATCH', prevMsg, body(touchedDay));
+}
+
+// Post today's message in the channels that lack one. Claiming them first ('' per channel) keeps
+// two refreshes running at once from both posting. A Discord hiccup frees the channel again, so the
+// next cron minute retries; a refused webhook keeps '' until the channel is added again.
+async function postToday(env, teamId, today, raw, msgs, hooks, body) {
+  const claimed = { ...msgs, ...Object.fromEntries(hooks.map(h => [hookId(h), ''])) };
+  const claim = await env.DB.prepare('UPDATE team_settings SET schedule_msg_id = ? WHERE team_id = ? AND schedule_day = ? AND schedule_msg_id IS ?')
+    .bind(JSON.stringify(claimed), teamId, today, raw ?? null).run();
+  if (!claim.meta?.changes) return;
+  const results = await Promise.all(hooks.map(async (hook) => [hookId(hook), await webhookCall(env, hook, 'POST', null, body)]));
+  const stmts = results.filter(([, r]) => r.ok ? !!r.id : !permanent(r.status)).map(([id, r]) => r.ok
+    ? env.DB.prepare('UPDATE team_settings SET schedule_msg_id = json_set(schedule_msg_id, ?, ?) WHERE team_id = ? AND schedule_day = ?').bind(`$."${id}"`, r.id, teamId, today)
+    : env.DB.prepare('UPDATE team_settings SET schedule_msg_id = json_remove(schedule_msg_id, ?) WHERE team_id = ? AND schedule_day = ?').bind(`$."${id}"`, teamId, today));
+  if (stmts.length) await env.DB.batch(stmts);
 }
 
 // Fire-and-forget from a request: runs after the response in ctx.waitUntil when there is one.
@@ -99,14 +115,17 @@ export function queueScheduleRefresh(ctx, env, teamId, opts) {
   return work;
 }
 
-// Cron: teams whose post is due for a new day, plus the ones whose bosses changed this tick.
-// touched: Map teamId -> touchedDay (or null).
+// Cron: teams whose post is due for a new day or still missing in a channel (a Discord hiccup),
+// plus the ones whose bosses changed this tick. touched: Map teamId -> touchedDay (or null).
 export async function cronScheduleRefresh(env, touched) {
   const now = Date.now();
-  const teams = await env.DB.prepare("SELECT team_id, timezone, schedule_day FROM team_settings WHERE webhook_schedule IS NOT NULL AND webhook_schedule != ''").all();
+  const teams = await env.DB.prepare("SELECT team_id, timezone, schedule_day, webhook_schedule, schedule_msg_id FROM team_settings WHERE webhook_schedule IS NOT NULL AND webhook_schedule != ''").all();
   const due = new Map();
   for (const t of teams.results) {
-    if (touched.has(t.team_id) || t.schedule_day !== dayKey(now, t.timezone || 'Asia/Manila')) due.set(t.team_id, touched.get(t.team_id) || null);
+    const hooks = hookUrls(t.webhook_schedule), msgs = parseMsgs(t.schedule_msg_id, hooks);
+    if (touched.has(t.team_id) || t.schedule_day !== dayKey(now, t.timezone || 'Asia/Manila') || hooks.some(h => !(hookId(h) in msgs))) {
+      due.set(t.team_id, touched.get(t.team_id) || null);
+    }
   }
   await Promise.allSettled([...due].map(([teamId, touchedDay]) => refreshSchedulePost(env, teamId, { touchedDay })));
   // Keep a few days of finished spawns (today's and yesterday's posts are the only readers).

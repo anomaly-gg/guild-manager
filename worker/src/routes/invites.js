@@ -3,6 +3,7 @@
 import { json } from '../lib/http.js';
 import { rateLimit } from '../lib/ratelimit.js';
 import { sendDiscord } from '../lib/discord.js';
+import { hookUrls } from '../lib/webhooks.js';
 import { isPremiumTeam } from '../lib/team.js';
 import { limitsFor } from '../lib/limits.js';
 
@@ -58,7 +59,7 @@ export const routes = [
       // Notify via webhook if available
       const fullSettings = await env.DB.prepare('SELECT webhook_url FROM team_settings WHERE team_id = ?').bind(team.id).first();
       if (fullSettings?.webhook_url) {
-        await sendDiscord(fullSettings.webhook_url, 'Join Request',
+        await sendDiscord(env, hookUrls(fullSettings.webhook_url), 'Join Request',
           `**${dbUser?.username || 'Someone'}** wants to join **${team.name}**.\nApprove or deny in team settings.`, 16760576);
       }
 
@@ -139,7 +140,7 @@ export const routes = [
       // Notify via webhook
       const settings = await env.DB.prepare('SELECT webhook_url FROM team_settings WHERE team_id = ?').bind(teamId).first();
       if (settings?.webhook_url) {
-        await sendDiscord(settings.webhook_url, 'Member Joined',
+        await sendDiscord(env, hookUrls(settings.webhook_url), 'Member Joined',
           `**${req.username}** has been approved and joined the team!`, 5763719);
       }
 

@@ -4,12 +4,13 @@
 //
 // No per-boss alerts: 30+ bosses coming up at once would be 30+ pings, so the rows are marked
 // already warned/notified (the cron still flips them to "up" and runs auto-reset as usual) and
-// the alert channel gets ONE summary message instead. Phones get one alert too (lib/push-state.js
+// each alert channel gets ONE summary message instead. Phones get one alert too (lib/push-state.js
 // shows the reset as one line while maintenance_at is recent).
 
 import { json, safeJson } from '../lib/http.js';
 import { requireTeamMember } from '../lib/team.js';
-import { webhookCall, isValidDiscordWebhook } from '../lib/discord.js';
+import { webhookCall } from '../lib/discord.js';
+import { alertHooks } from '../lib/webhooks.js';
 import { clockIn } from '../lib/schedule-format.js';
 import { queueScheduleRefresh } from '../lib/schedule-post.js';
 import { queuePush } from '../lib/push-send.js';
@@ -58,9 +59,10 @@ export const routes = [
     queuePush(ctx, env, [{ teamId, kind: 'maintenance' }]);
 
     const s = settings.results[0] || {};
-    const hook = s.webhook_boss || s.webhook_url;
-    if (hook && isValidDiscordWebhook(hook) && (s.on_spawn || s.on_warning)) {
-      const post = webhookCall(env, hook, 'POST', null, summary(reset, kept, openAt, now, s.timezone || 'Asia/Manila'))
+    const hooks = alertHooks(s, 'boss');
+    if (hooks.length && (s.on_spawn || s.on_warning)) {
+      const body = summary(reset, kept, openAt, now, s.timezone || 'Asia/Manila');
+      const post = Promise.all(hooks.map(hook => webhookCall(env, hook, 'POST', null, body)))
         .catch(e => console.error('maintenance summary failed:', e));
       if (ctx?.waitUntil) ctx.waitUntil(post);
     }

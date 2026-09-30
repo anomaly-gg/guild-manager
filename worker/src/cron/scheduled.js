@@ -1,6 +1,7 @@
 // Cron tick (every minute): boss timers, daily schedule posts, event notifications, recurring events, DKP decay, auctions, cleanup, license recheck
 
-import { sendDiscord } from '../lib/discord.js';
+import { sendDiscord, discordCalls } from '../lib/discord.js';
+import { alertHooks } from '../lib/webhooks.js';
 import { calcNextSpawn } from '../lib/spawn.js';
 import { recheckLicenses } from '../lib/gumroad.js';
 import { spawnEndStmt, cronScheduleRefresh } from '../lib/schedule-post.js';
@@ -8,7 +9,12 @@ import { syncCommands } from '../lib/discord-commands.js';
 import { runReplyCleanup } from '../lib/discord-cleanup.js';
 import { alertSoon, alertSpawned, alertEnded } from '../lib/boss-alerts.js';
 import { parseGroups, advanceGroups } from '../lib/spawn-groups.js';
-import { cronPush } from '../lib/push-send.js';
+import { cronPush, MAX_PER_RUN } from '../lib/push-send.js';
+
+// Free plan: 50 subrequests per run. Discord goes first; phone pushes get what is left after
+// RESERVE for the steps after them (schedule post edits, reply clean-up, license rechecks);
+// devices over the budget are woken on the next minute.
+const SUBREQUESTS = 50, RESERVE = 16, MIN_PUSH = 5;
 
 export async function handleScheduled(env) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
@@ -16,6 +22,7 @@ export async function handleScheduled(env) {
   // on ~40 CREATE TABLE IF NOT EXISTS + migration probes, blowing the Workers Free
   // 10ms budget. Cron assumes tables exist.
   const now = Date.now();
+  discordCalls.reset();
 
   const dbWrites = [];
   const discordSends = [];
@@ -36,15 +43,15 @@ export async function handleScheduled(env) {
 
     for (const boss of bosses.results) {
       try {
-        const bossHook = boss.webhook_boss || boss.webhook_url;
+        const bossHooks = alertHooks(boss, 'boss');
         const tz = boss.timezone || 'Asia/Manila';
         if (boss.status === 'waiting') {
           const remaining = boss.next_spawn - now;
           const alertMs = (boss.alert_minutes || 5) * 60000;
 
           if (remaining > 0 && remaining <= alertMs && !boss.warned) {
-            if (boss.on_warning && bossHook) {
-              discordSends.push(alertSoon(env, bossHook, boss, tz, now).then(id => {
+            if (boss.on_warning && bossHooks.length) {
+              discordSends.push(alertSoon(env, bossHooks, boss, tz, now).then(id => {
                 if (id) alertIdWrites.push(env.DB.prepare('UPDATE bosses SET alert_soon_msg = ? WHERE id = ?').bind(id, boss.id));
               }));
             }
@@ -56,8 +63,8 @@ export async function handleScheduled(env) {
           if (remaining <= 0) {
             const resetMs = boss.window_ms > 0 ? boss.window_ms : (boss.auto_reset_minutes ?? 5) * 60000;
             // Spawn alerts on: a new (pinging) message. Off: the "soon" message, if any, turns into it.
-            if (!boss.spawn_notified && bossHook && (boss.on_spawn || boss.alert_soon_msg)) {
-              discordSends.push(alertSpawned(env, bossHook, boss, tz, { post: !!boss.on_spawn }).then(({ spawn }) => {
+            if (!boss.spawn_notified && bossHooks.length && (boss.on_spawn || boss.alert_soon_msg)) {
+              discordSends.push(alertSpawned(env, bossHooks, boss, tz, { post: !!boss.on_spawn }).then(({ spawn }) => {
                 // status guard: a kill logged in the meantime already closed this spawn's alerts
                 alertIdWrites.push(env.DB.prepare("UPDATE bosses SET alert_spawn_msg = ?, alert_soon_msg = NULL WHERE id = ? AND status = 'spawned'").bind(spawn, boss.id));
               }));
@@ -77,7 +84,7 @@ export async function handleScheduled(env) {
           scheduleTouched.set(boss.team_id, ended.day);
           pushChanges.push({ teamId: boss.team_id, kind: 'ended', groupId: boss.spawn_group });
           // No new message: the spawn's alert is edited to say it reset.
-          discordSends.push(alertEnded(env, bossHook, boss, tz, { outcome: 'reset', at: now, nextSpawn }));
+          discordSends.push(alertEnded(env, bossHooks, boss, tz, { outcome: 'reset', at: now, nextSpawn }));
         }
       } catch (e) { console.error('Boss processing error:', boss.id, e); }
     }
@@ -97,10 +104,10 @@ export async function handleScheduled(env) {
     `).bind(now, now).all();
 
     for (const event of upcomingEvents.results) {
-      const eventHook = event.webhook_events || event.webhook_url;
-      if (eventHook && event.on_event !== 0) {
+      const eventHooks = alertHooks(event, 'events');
+      if (eventHooks.length && event.on_event !== 0) {
         const minLeft = Math.max(1, Math.round((event.event_time - now) / 60000));
-        discordSends.push(sendDiscord(eventHook, `${event.title} - Starting Soon!`,
+        discordSends.push(sendDiscord(env, eventHooks, `${event.title} - Starting Soon!`,
           `**${event.title}** starts in **${minLeft} minute${minLeft !== 1 ? 's' : ''}**!\n${event.rsvp_count} member${event.rsvp_count !== 1 ? 's' : ''} going.${event.description ? '\n\n' + event.description : ''}`,
           16760576));
       }
@@ -118,9 +125,9 @@ export async function handleScheduled(env) {
     `).bind(now).all();
 
     for (const event of startingEvents.results) {
-      const eventHook = event.webhook_events || event.webhook_url;
-      if (eventHook) {
-        discordSends.push(sendDiscord(eventHook, `${event.title} is starting NOW!`,
+      const eventHooks = alertHooks(event, 'events');
+      if (eventHooks.length) {
+        discordSends.push(sendDiscord(env, eventHooks, `${event.title} is starting NOW!`,
           `**${event.title}** has started!${event.description ? '\n\n' + event.description : ''}`, 15548997));
       }
       dbWrites.push(env.DB.prepare('UPDATE events SET start_notified = 1 WHERE id = ?').bind(event.id));
@@ -138,9 +145,9 @@ export async function handleScheduled(env) {
     `).bind(now).all();
 
     for (const event of endedEvents.results) {
-      const eventHook = event.webhook_events || event.webhook_url;
-      if (eventHook) {
-        discordSends.push(sendDiscord(eventHook, `${event.title} has ended!`,
+      const eventHooks = alertHooks(event, 'events');
+      if (eventHooks.length) {
+        discordSends.push(sendDiscord(env, eventHooks, `${event.title} has ended!`,
           `**${event.title}** has ended. Thanks to everyone who participated!`, 5763719));
       }
       dbWrites.push(env.DB.prepare('UPDATE events SET end_notified = 1 WHERE id = ?').bind(event.id));
@@ -162,7 +169,7 @@ export async function handleScheduled(env) {
   }
 
   // --- Phone alerts: after the writes above, so a device syncing right away sees the new state. ---
-  await cronPush(env, pushChanges);
+  await cronPush(env, pushChanges, Math.max(MIN_PUSH, Math.min(MAX_PER_RUN, SUBREQUESTS - RESERVE - discordCalls.count)));
 
   // --- Daily schedule posts: new day at 00:00 team time, edits for bosses that changed above. ---
   try {

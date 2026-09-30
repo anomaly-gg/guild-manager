@@ -1,9 +1,9 @@
-// Team settings + webhook test (protected routes). Every field returned here has a consumer; dead ones were cut in M8.
+// Team settings (protected routes). Every field returned here has a consumer; dead ones were cut in M8.
+// Discord alert channels are added/removed/tested in routes/webhooks.js.
 
 import { json, safeJson } from '../lib/http.js';
-import { rateLimit } from '../lib/ratelimit.js';
-import { sendDiscord, isValidDiscordWebhook } from '../lib/discord.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
+import { KINDS, publicHooks } from '../lib/webhooks.js';
 import { parseRoles } from './events.js';
 import { lootModeFor } from '../lib/rotation.js';
 import { createToken } from '../lib/auth.js';
@@ -57,7 +57,6 @@ export const routes = [
 
     const settings = await env.DB.prepare('SELECT * FROM team_settings WHERE team_id = ?').bind(teamId).first();
     return json({
-      webhookUrlSet: !!settings?.webhook_url,
       onWarning: settings?.on_warning ?? true,
       onSpawn: settings?.on_spawn ?? true,
       onEvent: settings?.on_event ?? true,
@@ -68,10 +67,8 @@ export const routes = [
       autoDeleteEventsDays: settings?.auto_delete_events_days ?? 0,
       pointsName: settings?.points_name || 'DKP',
       timezone: settings?.timezone || 'Asia/Manila',
-      // Premium settings — only return "set" flags, never leak the URL (even partially)
-      webhookBossSet: !!settings?.webhook_boss,
-      webhookEventsSet: !!settings?.webhook_events,
-      webhookScheduleSet: !!settings?.webhook_schedule,
+      // Discord channels per alert kind: id + name only, never the URL (its token lets anyone post)
+      webhooks: Object.fromEntries(Object.entries(KINDS).map(([kind, col]) => [kind, publicHooks(settings?.[col])])),
       spawnGroups: parseGroups(settings?.spawn_groups),
       dkpDecayEnabled: !!(settings?.dkp_decay_enabled),
       dkpDecayPercent: settings?.dkp_decay_percent ?? 10,
@@ -115,16 +112,6 @@ export const routes = [
     if (existing) {
       const sets = [];
       const vals = [];
-      if (body.webhookUrl !== undefined) {
-        if (body.webhookUrl && !isValidDiscordWebhook(body.webhookUrl)) return json({ error: 'Webhook must be a Discord webhook URL (https://discord.com/api/webhooks/...)' }, 400);
-        sets.push('webhook_url = ?'); vals.push(body.webhookUrl || null);
-      }
-      // Daily schedule post: a new/removed webhook starts over (the next refresh posts today's message there).
-      if (body.webhookSchedule !== undefined) {
-        if (body.webhookSchedule && !isValidDiscordWebhook(body.webhookSchedule)) return json({ error: 'Webhook must be a Discord webhook URL (https://discord.com/api/webhooks/...)' }, 400);
-        sets.push('webhook_schedule = ?', 'schedule_day = NULL', 'schedule_msg_id = NULL', 'schedule_prev_day = NULL', 'schedule_prev_msg_id = NULL');
-        vals.push(body.webhookSchedule || null);
-      }
       if (body.spawnGroups !== undefined) {
         const groups = cleanGroups(body.spawnGroups);
         if (typeof groups === 'string') return json({ error: groups }, 400);
@@ -174,22 +161,13 @@ export const routes = [
       if (body.attendanceAutoApprove !== undefined) { sets.push('attendance_auto_approve = ?'); vals.push(body.attendanceAutoApprove ? 1 : 0); }
       if (body.attendanceSelfCheckin !== undefined) { sets.push('attendance_self_checkin = ?'); vals.push(body.attendanceSelfCheckin ? 1 : 0); }
       // Premium fields — require premium team
-      const hasPremiumFields = body.webhookBoss !== undefined || body.webhookEvents !== undefined ||
-        body.dkpDecayEnabled !== undefined || body.dkpDecayPercent !== undefined ||
+      const hasPremiumFields = body.dkpDecayEnabled !== undefined || body.dkpDecayPercent !== undefined ||
         body.dkpDecayInactiveDays !== undefined || body.dkpDecayIntervalDays !== undefined;
 
       if (hasPremiumFields && !(await isPremiumTeam(env, teamId))) {
         return json({ error: 'Premium required', premiumRequired: true }, 403);
       }
 
-      if (body.webhookBoss !== undefined) {
-        if (body.webhookBoss && !isValidDiscordWebhook(body.webhookBoss)) return json({ error: 'Invalid Discord webhook URL' }, 400);
-        sets.push('webhook_boss = ?'); vals.push(body.webhookBoss || null);
-      }
-      if (body.webhookEvents !== undefined) {
-        if (body.webhookEvents && !isValidDiscordWebhook(body.webhookEvents)) return json({ error: 'Invalid Discord webhook URL' }, 400);
-        sets.push('webhook_events = ?'); vals.push(body.webhookEvents || null);
-      }
       if (body.dkpDecayEnabled !== undefined) { sets.push('dkp_decay_enabled = ?'); vals.push(body.dkpDecayEnabled ? 1 : 0); }
       if (body.dkpDecayPercent !== undefined) { sets.push('dkp_decay_percent = ?'); vals.push(Math.min(100, Math.max(0, parseInt(body.dkpDecayPercent) || 10))); }
       if (body.dkpDecayInactiveDays !== undefined) { sets.push('dkp_decay_inactive_days = ?'); vals.push(Math.min(365, Math.max(1, parseInt(body.dkpDecayInactiveDays) || 14))); }
@@ -198,24 +176,10 @@ export const routes = [
       if (sets.length > 0) {
         vals.push(teamId);
         await env.DB.prepare(`UPDATE team_settings SET ${sets.join(', ')} WHERE team_id = ?`).bind(...vals).run();
-        if (body.webhookSchedule || body.spawnGroups !== undefined || body.timezone !== undefined) queueScheduleRefresh(ctx, env, teamId);
+        if (body.spawnGroups !== undefined || body.timezone !== undefined) queueScheduleRefresh(ctx, env, teamId);
       }
     }
 
-    return json({ ok: true });
-  } },
-
-  // POST /api/teams/:id/settings/test — test webhook (leader/officer only)
-  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/settings\/test$/, handler: async ({ env, user, params }) => {
-    if (rateLimit(`webhook-test:${user.userId}`, 3, 60000)) {
-      return json({ error: 'Too many test requests. Try again in a minute.' }, 429);
-    }
-    const teamId = params[1];
-    const member = await requireTeamMember(env, teamId, user.userId);
-    if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
-    const settings = await env.DB.prepare('SELECT webhook_url FROM team_settings WHERE team_id = ?').bind(teamId).first();
-    if (!settings?.webhook_url) return json({ error: 'No webhook' }, 400);
-    await sendDiscord(settings.webhook_url, 'Test Notification', 'Guild Manager webhook is working!', 5793266);
     return json({ ok: true });
   } },
 ];

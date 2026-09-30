@@ -3,7 +3,8 @@
 // (lib/push-prefs.js); each device then syncs its one notification per team (lib/push-state.js).
 //
 // A run sends at most MAX_PER_RUN wake-ups (free plan: 50 subrequests per invocation, shared with
-// Discord); the rest are marked `pending` and go out on the next cron minute.
+// Discord; the cron passes a smaller cap when Discord used more); the rest are marked `pending`
+// and go out on the next cron minute.
 
 import { sendWakeUp } from './webpush.js';
 import { authFor } from './push-keys.js';
@@ -22,10 +23,10 @@ export function allowedEndpoint(env, endpoint) {
 }
 
 // Send to these devices (Map id -> endpoint), keep the bookkeeping in one batch.
-export async function wakeDevices(env, devices) {
+export async function wakeDevices(env, devices, max = MAX_PER_RUN) {
   const list = [...devices];
   if (!list.length) return { sent: 0, deferred: 0 };
-  const now = list.slice(0, MAX_PER_RUN), later = list.slice(MAX_PER_RUN);
+  const now = list.slice(0, max), later = list.slice(max);
   const results = await Promise.all(now.map(async ([id, endpoint]) => [id, await sendWakeUp(endpoint, await authFor(env, endpoint))]));
   const gone = results.filter(([, r]) => r.gone).map(([id]) => id);
   const failed = results.filter(([, r]) => !r.ok && !r.gone).map(([id]) => id);
@@ -63,12 +64,12 @@ export async function devicesFor(env, changes) {
 
 // Cron: this tick's changes + devices left over from the last tick. Never throws (push must not
 // break the boss loop; e.g. the tables do not exist until the first request after a deploy).
-export async function cronPush(env, changes) {
+export async function cronPush(env, changes, max = MAX_PER_RUN) {
   try {
     const devices = await devicesFor(env, changes);
-    const pending = await env.DB.prepare(`SELECT id, endpoint FROM push_subs WHERE pending = 1 LIMIT ${MAX_PER_RUN}`).all();
+    const pending = await env.DB.prepare(`SELECT id, endpoint FROM push_subs WHERE pending = 1 LIMIT ${max}`).all();
     for (const r of pending.results) devices.set(r.id, r.endpoint);
-    return await wakeDevices(env, devices);
+    return await wakeDevices(env, devices, max);
   } catch (e) {
     console.error('push (cron) failed:', e);
     return null;

@@ -29,7 +29,7 @@ const mock = http.createServer((req, res) => {
     if (req.method === 'POST' && m) { edits.set(m[2], JSON.parse(body).content); return send(200, {}); }
     m = req.url.match(/^\/webhooks\/(\d+)\/([^/?]+)\?wait=true$/);
     if (req.method === 'POST' && m) {
-      if (failPosts) return send(500, { message: 'boom' });
+      if (failPosts) return send(failPosts === 'perm' ? 400 : 500, { message: 'boom' });
       const id = 'm' + (++msgN); hooks.push({ method: 'POST', msg: id, hook: m[1], body: JSON.parse(body) }); return send(200, { id });
     }
     m = req.url.match(/^\/webhooks\/(\d+)\/([^/?]+)\/messages\/(\w+)$/);
@@ -37,6 +37,8 @@ const mock = http.createServer((req, res) => {
       if (m[3] === 'gone') return send(404, { message: 'Unknown Message', code: 10008 });
       hooks.push({ method: 'PATCH', msg: m[3], hook: m[1], body: JSON.parse(body) }); return send(200, {});
     }
+    m = req.url.match(/^\/webhooks\/(\d+)\/([^/?]+)$/);   // webhook lookup when a channel is added
+    if (req.method === 'GET' && m) return m[1] === '404' ? send(404, { message: 'Unknown Webhook', code: 10015 }) : send(200, { id: m[1], name: 'Hook ' + m[1] });
     if (req.method === 'PUT' && /^\/applications\/\d+\/commands$/.test(req.url)) { cmdPuts.push(JSON.parse(body)); return send(200, JSON.parse(body)); }
     if (req.method === 'GET' && /^\/guilds\/\w+\/roles$/.test(req.url)) {
       return send(200, [{ id: 'G1', name: '@everyone', position: 0 }, { id: '5551234567', name: 'Kongreso', position: 3, color: 15158332 }, { id: '5559876543', name: 'Senado', position: 2 }, { id: '77', name: 'SomeBot', managed: true, position: 1 }]);
@@ -76,6 +78,8 @@ async function nextHook(from, pred = () => true, ms = 6000) {
   return null;
 }
 const desc = (h) => h?.body?.embeds?.[0]?.description || '';
+// stored message ids are per channel: { <webhook id>: <message id> }
+const msgOf = (raw, hook) => { try { return JSON.parse(raw)?.[hook]; } catch { return undefined; } };
 const tz = 'Asia/Manila';
 const dayKey = (ts) => new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz }).format(new Date(ts));
 
@@ -92,26 +96,34 @@ await api('POST', `/api/teams/${team}/bosses/presets`, { presetId: 'lordnine', n
 await api('PUT', `/api/teams/${team}/settings`, { timezone: tz }, leader);
 check('setup: /link G1', /Linked this server/.test(await run('link', [{ name: 'code', value: code }], LEADER)));
 const bossId = (name) => rows(`SELECT id FROM bosses WHERE team_id='${team}' AND name='${name}'`)[0].id;
+const addHook = (kind, url, tok = leader) => api('POST', `/api/teams/${team}/webhooks`, { kind, url }, tok);
+const dropHook = (kind, id) => api('DELETE', `/api/teams/${team}/webhooks/${kind}/${id}`, null, leader);
 const ven = bossId('Venatus'), vio = bossId('Viorent'), dal = bossId('Lady Dalia');
 // Preset timers land tomorrow when the suite runs in the evening, off today's post; pin the two bosses
 // the assign checks read to a few minutes from now (still today unless run in the last minutes before midnight).
 sql(`UPDATE bosses SET next_spawn = ${Date.now() + 5 * 60000}, status='waiting' WHERE id IN ('${ven}', '${vio}')`);
 
 // ---- webhook setting
-let [s, d] = await api('PUT', `/api/teams/${team}/settings`, { webhookSchedule: 'https://example.com/x' }, leader);
+let [s, d] = await addHook('schedule', 'https://example.com/x');
 check('non-Discord schedule webhook refused', s === 400, [s, d]);
-[s] = await api('PUT', `/api/teams/${team}/settings`, { webhookSchedule: 'https://discord.com/api/webhooks/999/tokA' }, mem);
-check('member cannot set the schedule webhook', s === 403, s);
+[s] = await addHook('schedule', 'https://discord.com/api/webhooks/999/tokA', mem);
+check('member cannot add a schedule channel', s === 403, s);
+[s, d] = await addHook('schedule', 'https://discord.com/api/webhooks/404/tokX');
+check('a webhook Discord does not know is refused', s === 400 && /does not know/.test(d.error || ''), [s, d]);
 let mark = hooks.length;
-[s] = await api('PUT', `/api/teams/${team}/settings`, { webhookSchedule: 'https://discord.com/api/webhooks/999/tokA' }, leader);
+[s, d] = await addHook('schedule', 'https://discord.com/api/webhooks/999/tokA');
 let h = await nextHook(mark);
-check('saving the webhook posts today right away', s === 200 && h?.method === 'POST' && h.hook === '999', h);
+check('adding the channel posts today right away (webhook name kept)', s === 200 && d.name === 'Hook 999' && h?.method === 'POST' && h.hook === '999', [d, h]);
 check('post is an embed titled team + weekday date, stamped with the edit time, no mentions parsed', /^Sched Guild · \w+day \d{1,2} \w+$/.test(h?.body?.embeds?.[0]?.title || '') && Math.abs(Date.parse(h?.body?.embeds?.[0]?.timestamp) - Date.now()) < 60000 && JSON.stringify(h?.body?.allowed_mentions) === '{"parse":[]}', h?.body);
 let st = rows(`SELECT schedule_day, schedule_msg_id FROM team_settings WHERE team_id='${team}'`)[0];
-check('message id + day stored', st.schedule_msg_id === h?.msg && st.schedule_day === dayKey(Date.now()), st);
+check('message id + day stored', msgOf(st.schedule_msg_id, '999') === h?.msg && st.schedule_day === dayKey(Date.now()), st);
 const msg1 = h?.msg;
 [, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
-check('settings report webhookScheduleSet (URL not leaked)', d.webhookScheduleSet === true && !JSON.stringify(d).includes('tokA'), d.webhookScheduleSet);
+check('settings list the channel by id + name (URL not leaked)', d.webhooks?.schedule?.length === 1 && d.webhooks.schedule[0].id === '999' && d.webhooks.schedule[0].name === 'Hook 999' && !JSON.stringify(d).includes('tokA'), d.webhooks);
+[s, d] = await addHook('schedule', 'https://discord.com/api/webhooks/998/tokB');
+check('free plan: a second schedule channel is Premium', s === 403 && d.premiumRequired === true, [s, d]);
+[s, d] = await addHook('boss', 'https://discord.com/api/webhooks/601/b1');
+check('free plan: boss alerts of their own are Premium', s === 403 && d.premiumRequired === true, [s, d]);
 
 // ---- groups
 [s, d] = await api('PUT', `/api/teams/${team}/settings`, { spawnGroups: [{ name: 'A' }, { name: 'a' }] }, leader);
@@ -191,7 +203,7 @@ sql(`UPDATE team_settings SET schedule_day='2000-01-01' WHERE team_id='${team}'`
 mark = hooks.length; await cron();
 h = await nextHook(mark, x => x.method === 'POST');
 st = rows(`SELECT schedule_day, schedule_msg_id, schedule_prev_day, schedule_prev_msg_id FROM team_settings WHERE team_id='${team}'`)[0];
-check('rollover posts a new message and keeps the old one as prev', h && st.schedule_msg_id === h.msg && st.schedule_prev_msg_id === msg1 && st.schedule_prev_day === '2000-01-01' && st.schedule_day === dayKey(Date.now()), st);
+check('rollover posts a new message and keeps the old one as prev', h && msgOf(st.schedule_msg_id, '999') === h.msg && msgOf(st.schedule_prev_msg_id, '999') === msg1 && st.schedule_prev_day === '2000-01-01' && st.schedule_day === dayKey(Date.now()), st);
 const msg2 = h?.msg;
 mark = hooks.length; await cron(); await sleep(1500);
 check('no second post in the same day', !hooks.slice(mark).some(x => x.method === 'POST'));
@@ -211,20 +223,64 @@ sql(`UPDATE team_settings SET schedule_msg_id='gone' WHERE team_id='${team}'`);
 mark = hooks.length;
 await api('PUT', `/api/teams/${team}/bosses/${ven}/group`, { groupId: SEN }, leader);
 h = await nextHook(mark, x => x.method === 'POST');
-check('deleted message is replaced by a new post', h && rows(`SELECT schedule_msg_id FROM team_settings WHERE team_id='${team}'`)[0].schedule_msg_id === h.msg, h?.msg);
+check('deleted message is replaced by a new post (an id saved before channel lists counts as the first channel)', h && msgOf(rows(`SELECT schedule_msg_id FROM team_settings WHERE team_id='${team}'`)[0].schedule_msg_id, '999') === h.msg, h?.msg);
 
-// ---- Discord down at midnight -> day handed back, retried next minute
+// ---- Discord down at midnight -> the day moves on, the channel's post is retried next minute
+const schedRow = () => rows(`SELECT schedule_day, schedule_msg_id, schedule_prev_msg_id FROM team_settings WHERE team_id='${team}'`)[0];
 sql(`UPDATE team_settings SET schedule_day='2000-01-02', schedule_msg_id='old1' WHERE team_id='${team}'`);
 failPosts = true; await cron(); await sleep(1500);
-st = rows(`SELECT schedule_day, schedule_msg_id FROM team_settings WHERE team_id='${team}'`)[0];
-check('failed rollover post hands the day back', st.schedule_day === '2000-01-02' && st.schedule_msg_id === 'old1', st);
+st = schedRow();
+check('failed rollover post: day rolled, yesterday kept, the channel left free to retry', st.schedule_day === dayKey(Date.now()) && st.schedule_prev_msg_id === 'old1' && msgOf(st.schedule_msg_id, '999') === undefined, st);
 failPosts = false; mark = hooks.length; await cron();
 h = await nextHook(mark, x => x.method === 'POST');
-check('retried on the next cron minute', !!h && rows(`SELECT schedule_msg_id FROM team_settings WHERE team_id='${team}'`)[0].schedule_msg_id === h.msg);
+check('retried on the next cron minute', !!h && msgOf(schedRow().schedule_msg_id, '999') === h.msg);
+
+// ---- webhook refused (4xx) -> marked, not retried every minute; adding the channel again retries
+sql(`UPDATE team_settings SET schedule_msg_id='{}' WHERE team_id='${team}'`);
+failPosts = 'perm'; await cron(); await sleep(1500);
+check('refused post: channel marked as refused', msgOf(schedRow().schedule_msg_id, '999') === '', schedRow());
+failPosts = false; mark = hooks.length; await cron(); await sleep(1500);
+check('refused post: not retried by the cron', !hooks.slice(mark).some(x => x.method === 'POST'), hooks.slice(mark));
+mark = hooks.length;
+[s] = await addHook('schedule', 'https://discord.com/api/webhooks/999/tokA');
+h = await nextHook(mark, x => x.method === 'POST');
+check('adding the same channel again posts again', s === 200 && h?.hook === '999' && msgOf(schedRow().schedule_msg_id, '999') === h.msg, [s, h, schedRow()]);
+
+// ---- Premium: up to 3 schedule channels, each with its own message
+sql(`UPDATE users SET premium = 1 WHERE id='${ids.leader}'`);
+{
+  const m999 = msgOf(schedRow().schedule_msg_id, '999');
+  mark = hooks.length;
+  [s] = await addHook('schedule', 'https://discord.com/api/webhooks/998/tokB');
+  h = await nextHook(mark, x => x.method === 'POST');
+  await sleep(800);
+  check('second channel: today posted there only', s === 200 && h?.hook === '998' && hooks.slice(mark).filter(x => x.method === 'POST').length === 1 && msgOf(schedRow().schedule_msg_id, '998') === h.msg && msgOf(schedRow().schedule_msg_id, '999') === m999, [s, hooks.slice(mark), schedRow()]);
+  [s] = await addHook('schedule', 'https://discord.com/api/webhooks/997/tokC');
+  await nextHook(mark, x => x.method === 'POST' && x.hook === '997');
+  [s, d] = await addHook('schedule', 'https://discord.com/api/webhooks/996/tokD');
+  check('a fourth channel is refused', s === 403 && /Up to 3/.test(d.error || '') && !d.premiumRequired, [s, d]);
+  [, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
+  check('settings list all three channels', d.webhooks.schedule.map(x => x.id).join() === '999,998,997', d.webhooks.schedule);
+  mark = hooks.length;
+  await api('PUT', `/api/teams/${team}/bosses/${ven}/group`, { groupId: KON }, leader);
+  await nextHook(mark, x => x.hook === '997' && x.method === 'PATCH'); await sleep(800);
+  let edited = hooks.slice(mark).filter(x => x.method === 'PATCH').map(x => x.hook).sort().join();
+  check('a change edits the post in every channel, no new posts', edited === '997,998,999' && !hooks.slice(mark).some(x => x.method === 'POST'), hooks.slice(mark));
+  [s] = await dropHook('schedule', '998');
+  check('removing a channel drops its message id only', s === 200 && msgOf(schedRow().schedule_msg_id, '998') === undefined && msgOf(schedRow().schedule_msg_id, '999') === m999, schedRow());
+  mark = hooks.length;
+  await api('PUT', `/api/teams/${team}/bosses/${ven}/group`, { groupId: SEN }, leader);
+  await nextHook(mark, x => x.hook === '997' && x.method === 'PATCH'); await sleep(800);
+  edited = hooks.slice(mark).map(x => x.hook).sort().join();
+  check('removed channel is no longer touched', edited === '997,999', hooks.slice(mark));
+  [s] = await dropHook('schedule', '998');
+  check('removing an unknown channel: 404', s === 404, s);
+}
 
 // ---- boss alerts: two messages per spawn, edited in place (lib/boss-alerts.js)
 {
-  await api('PUT', `/api/teams/${team}/settings`, { webhookUrl: 'https://discord.com/api/webhooks/555/alertTok', onWarning: true, onSpawn: true }, leader);
+  await addHook('url', 'https://discord.com/api/webhooks/555/alertTok');
+  await api('PUT', `/api/teams/${team}/settings`, { onWarning: true, onSpawn: true }, leader);
   const [, ab] = await api('POST', `/api/teams/${team}/bosses`, { name: 'Alert Boss', type: 'interval', intervalMs: 3600000 }, leader);
   const A = ab.id;
   const al = (from) => hooks.slice(from).filter(h => h.hook === '555');
@@ -246,7 +302,7 @@ check('retried on the next cron minute', !!h && rows(`SELECT schedule_msg_id FRO
   check('alert 1: "spawning soon" posted and its id kept', /Alert Boss — spawning soon/.test(title(soon)), title(soon));
   const shrink = al(m0).find(h => h.method === 'PATCH' && h.msg === soon?.msg);
   check('alert 2: "has spawned" posted; the soon message shrinks to one grey line', /Alert Boss has spawned/.test(title(up)) && /^-# ⏰ Alert Boss spawned at /.test(shrink?.body?.content || '') && shrink?.body?.embeds?.length === 0, [title(up), shrink?.body]);
-  check('spawn message id stored, soon id cleared', aRow().alert_spawn_msg === up?.msg && aRow().alert_soon_msg === null, aRow());
+  check('spawn message id stored, soon id cleared', msgOf(aRow().alert_spawn_msg, '555') === up?.msg && aRow().alert_soon_msg === null, aRow());
   m = hooks.length;
   await api('POST', `/api/teams/${team}/bosses/${A}/kill`, {}, leader);
   let ed = await nextHook(m, h => h.hook === '555' && h.method === 'PATCH' && h.msg === up?.msg);
@@ -275,9 +331,47 @@ check('retried on the next cron minute', !!h && rows(`SELECT schedule_msg_id FRO
   m = hooks.length; await cron();
   ed = await nextHook(m, h => h.hook === '555' && h.method === 'PATCH' && h.msg === soon?.msg);
   await sleep(500);
-  check('spawn alerts off: no new message; the soon message quietly turns into "has spawned"', /Alert Boss has spawned/.test(title(ed)) && !al(m).some(h => h.method === 'POST') && aRow().alert_spawn_msg === soon?.msg, [title(ed), aRow()]);
-  await api('PUT', `/api/teams/${team}/settings`, { onSpawn: true, webhookUrl: '' }, leader);
+  check('spawn alerts off: no new message; the soon message quietly turns into "has spawned"', /Alert Boss has spawned/.test(title(ed)) && !al(m).some(h => h.method === 'POST') && msgOf(aRow().alert_spawn_msg, '555') === soon?.msg, [title(ed), aRow()]);
+  await api('PUT', `/api/teams/${team}/settings`, { onSpawn: true }, leader);
+  await dropHook('url', '555');
   await api('DELETE', `/api/teams/${team}/bosses/${A}`, null, leader);
+}
+
+// ---- boss alerts in two channels of their own (Premium): each channel gets and edits its own messages
+{
+  await addHook('url', 'https://discord.com/api/webhooks/555/alertTok');
+  await addHook('boss', 'https://discord.com/api/webhooks/601/b1');
+  await addHook('boss', 'https://discord.com/api/webhooks/602/b2');
+  const [, mb] = await api('POST', `/api/teams/${team}/bosses`, { name: 'Multi Boss', type: 'interval', intervalMs: 3600000 }, leader);
+  const B = mb.id;
+  const bRow = () => rows(`SELECT alert_soon_msg, alert_spawn_msg FROM bosses WHERE id='${B}'`)[0];
+  const both = async (from, method, pred = () => true) => {
+    for (let t = 0; t < 6000; t += 150) {
+      const got = hooks.slice(from).filter(x => x.method === method && ['601', '602'].includes(x.hook) && pred(x));
+      if (new Set(got.map(x => x.hook)).size === 2) return Object.fromEntries(got.map(x => [x.hook, x]));
+      await sleep(150);
+    }
+    return {};
+  };
+  sql(`UPDATE bosses SET status='waiting', warned=0, spawn_notified=0, next_spawn=${Date.now() + 120000} WHERE id='${B}'`);
+  let m = hooks.length; await cron();
+  const soon = await both(m, 'POST');
+  await sleep(500);
+  check('two boss channels: "spawning soon" in each, none in the main channel', soon['601'] && soon['602'] && !hooks.slice(m).some(x => x.hook === '555'), hooks.slice(m).map(x => x.hook));
+  check('two boss channels: soon ids kept per channel', msgOf(bRow().alert_soon_msg, '601') === soon['601']?.msg && msgOf(bRow().alert_soon_msg, '602') === soon['602']?.msg, bRow());
+  sql(`UPDATE bosses SET next_spawn=${Date.now() - 1000} WHERE id='${B}'`);
+  m = hooks.length; await cron();
+  const up = await both(m, 'POST');
+  const shrunk = await both(m, 'PATCH', x => x.msg === soon[x.hook]?.msg);
+  await sleep(500);
+  check('two boss channels: spawned posted in each and each soon message shrunk', up['601'] && up['602'] && shrunk['601'] && shrunk['602'], hooks.slice(m).map(x => [x.hook, x.method, x.msg]));
+  check('two boss channels: spawn ids kept per channel', msgOf(bRow().alert_spawn_msg, '601') === up['601']?.msg && msgOf(bRow().alert_spawn_msg, '602') === up['602']?.msg, bRow());
+  m = hooks.length;
+  await api('POST', `/api/teams/${team}/bosses/${B}/kill`, {}, leader);
+  const killed = await both(m, 'PATCH', x => x.msg === up[x.hook]?.msg && /killed/.test(x.body?.embeds?.[0]?.title || ''));
+  check('two boss channels: the kill edits the spawned message in each', killed['601'] && killed['602'], hooks.slice(m).map(x => [x.hook, x.method]));
+  await dropHook('boss', '601'); await dropHook('boss', '602'); await dropHook('url', '555');
+  await api('DELETE', `/api/teams/${team}/bosses/${B}`, null, leader);
 }
 
 // ---- per-spawn groups: projected repeat spawns, later groups, alternation
@@ -321,7 +415,8 @@ check('retried on the next cron minute', !!h && rows(`SELECT schedule_msg_id FRO
 
 // ---- maintenance reset: every interval timer to server open, fixed ones untouched, ONE alert message
 {
-  await api('PUT', `/api/teams/${team}/settings`, { webhookUrl: 'https://discord.com/api/webhooks/555/alertTok', onWarning: true, onSpawn: true }, leader);
+  await addHook('url', 'https://discord.com/api/webhooks/555/alertTok');
+  await api('PUT', `/api/teams/${team}/settings`, { onWarning: true, onSpawn: true }, leader);
   const [, fx] = await api('POST', `/api/teams/${team}/bosses`, { name: 'Fixed Boss', type: 'fixed', fixedTime: '21:00' }, leader);
   const fixedAt = () => rows(`SELECT next_spawn FROM bosses WHERE id='${fx.id}'`)[0].next_spawn;
   const fixedBefore = fixedAt();
@@ -347,8 +442,10 @@ check('retried on the next cron minute', !!h && rows(`SELECT schedule_msg_id FRO
   await api('DELETE', `/api/teams/${team}/bosses/${fx.id}`, null, leader);
 }
 
-// ---- remove webhook -> quiet
-await api('PUT', `/api/teams/${team}/settings`, { webhookSchedule: '' }, leader);
+// ---- remove every schedule channel -> quiet
+[, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
+for (const x of d.webhooks.schedule) await dropHook('schedule', x.id);
+check('last schedule channel removed: post state cleared', schedRow().schedule_day === null && schedRow().schedule_msg_id === null, schedRow());
 mark = hooks.length;
 await api('POST', `/api/teams/${team}/bosses/${vio}/kill`, {}, leader); await cron(); await sleep(1500);
 check('removed webhook: no more posts or edits', hooks.length === mark, hooks.slice(mark));

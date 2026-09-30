@@ -4,6 +4,7 @@ import { json, safeJson } from '../lib/http.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { lootModeFor, moveMember, ROTATION_ORDER_SQL } from '../lib/rotation.js';
 import { sendDiscord } from '../lib/discord.js';
+import { hookUrls } from '../lib/webhooks.js';
 
 export const routes = [
   { method: 'GET', pattern: /^\/api\/teams\/([^/]+)\/loot$/, handler: async ({ env, user, params }) => {
@@ -44,7 +45,7 @@ export const routes = [
       await moveMember(env, teamId, body.recipientId, 'bottom');
     }
 
-    // Discord: "X received Y" (+ who is next in the rotation). on_loot defaults to on; general webhook only.
+    // Discord: "X received Y" (+ who is next in the rotation). on_loot defaults to on; main webhook channels only.
     if (settings?.webhook_url && (settings.on_loot ?? 1)) {
       const recipient = await env.DB.prepare('SELECT username FROM users WHERE id = ?').bind(body.recipientId).first();
       const bossPart = body.bossName && body.bossName !== 'Unknown' ? ` from **${body.bossName}**` : '';
@@ -55,7 +56,7 @@ export const routes = [
       } else if (body.dkpCost > 0) {
         next = `\nCost: ${body.dkpCost} points`;
       }
-      await sendDiscord(settings.webhook_url, `Loot: ${body.itemName.trim()}`, `**${recipient?.username || 'Someone'}** received **${body.itemName.trim()}**${bossPart}.${next}`, 10181046);
+      await sendDiscord(env, hookUrls(settings.webhook_url), `Loot: ${body.itemName.trim()}`, `**${recipient?.username || 'Someone'}** received **${body.itemName.trim()}**${bossPart}.${next}`, 10181046);
     }
 
     // Deduct DKP if cost > 0

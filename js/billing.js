@@ -42,7 +42,7 @@ function showUpgradeModal() {
         <div class="modal-backdrop">
             <div class="card modal-card bill-modal">
                 <div class="help-head"><h2>Upgrade to Premium</h2><button class="tbtn-icon" data-close title="Close">&#10005;</button></div>
-                <p class="tf-help">Free covers 1 team, 10 members and 15 timers. Premium adds unlimited teams and timers, up to 100 members, the public timer page, per-channel webhooks, templates, kill history, the attendance report, calendar feed, wishlists, auctions and decay. <a href="pricing.html" target="_blank" rel="noopener">Compare plans</a></p>
+                <p class="tf-help">Free covers 1 team, 10 members and 15 timers. Premium adds unlimited teams and timers, up to 100 members, the public timer page, Discord alerts in up to 3 channels, templates, kill history, the attendance report, calendar feed, wishlists, auctions and decay. <a href="pricing.html" target="_blank" rel="noopener">Compare plans</a></p>
                 ${notice}
                 ${plans}
                 ${ownPlan === 'lifetime' ? '' : '<p class="tf-help">Checkout opens on Gumroad in a new tab and takes cards and PayPal. Premium switches on here by itself within a minute of paying.</p>'}
