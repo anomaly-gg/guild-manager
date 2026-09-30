@@ -4,7 +4,7 @@
 // ES module; uses shell globals by name (api, showToast).
 
 import { esc } from './timer-cards.js?v=20260929a';
-import * as Webhooks from './webhook-list.js?v=20260930a';
+import * as Webhooks from './webhook-list.js?v=20260930b';
 
 const MAX_GROUPS = 8;
 let roleServers = null;   // [{ guildId, name, roles: [{ id, name, color }] }] from linked servers, loaded once per open

@@ -27,6 +27,8 @@ export function html(kind, hooks, { label, max, upsell }) {
 }
 
 const T = () => currentTeamId;
+// /webhooks is not a cache bucket of its own (api.js), so drop the cached settings the list is read from.
+const changed = () => { _invalidateForMutation(`/api/teams/${T()}/settings`); return true; };
 const ADDED = { schedule: "Channel added. Today's schedule is being posted there." };
 
 // -> true when the list changed (the caller reloads)
@@ -41,7 +43,7 @@ export async function act(action, btn, root) {
         btn.disabled = false;
         if (r.error) { if (r.premiumRequired) showUpgradeModal(); else showToast(r.error); return false; }
         showToast(ADDED[kind] || `Channel added${r.name ? ': ' + r.name : ''}`);
-        return true;
+        return changed();
     }
     if (action === 'wh-test') {
         const r = await api('POST', `/api/teams/${T()}/webhooks/${kind}/${id}/test`);
@@ -53,7 +55,7 @@ export async function act(action, btn, root) {
         const r = await api('DELETE', `/api/teams/${T()}/webhooks/${kind}/${id}`);
         if (r.error) { showToast(r.error); return false; }
         showToast('Channel removed');
-        return true;
+        return changed();
     }
     return false;
 }
