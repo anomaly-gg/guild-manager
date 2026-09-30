@@ -39,6 +39,10 @@ function _invalidateForMutation(path) {
             _apiCache.delete(k);
         }
     }
+    // The team detail (/api/teams/<id>) carries members + roles, modules, plan and timezone, so any
+    // change inside a team can make it stale (a role change used to snap back until a reload).
+    const team = /^\/api\/teams\/[^/?]+/.exec(path.split('?')[0]);
+    if (team) _apiCache.delete(team[0]);
 }
 function _clearApiCache() { _apiCache.clear(); }
 
