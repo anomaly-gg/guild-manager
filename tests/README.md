@@ -17,6 +17,7 @@ cron). Needs Node, Python with `playwright`, and internet for `npx wrangler` and
 | `schedule-format` (unit) | Daily post fits Discord's 4096-character embed: oldest finished lines cut first, then the latest upcoming, bosses up now always kept |
 | `webhooks-unit` (unit) | Discord channel lists: stored format, single URLs / message ids saved before lists, main-channel fallback, ids kept per channel |
 | `groups-unit` (unit) | Spawn-group roles per Discord server: what is saved, what each server sees, filing roles saved before roles were per server |
+| `maintenance-unit` (unit) | Maintenance reset window: which bosses go up at server open (respawn timers, fixed bosses due inside the window), which keep their times, a kill after open left alone |
 | `billing` | Gumroad checkout links, ping, license activation, cron recheck/revoke (mock Gumroad on 8799) |
 | `presets` | Game preset list and adding a preset to a team |
 | `account` | Account export and deletion |

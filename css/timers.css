@@ -95,3 +95,7 @@
 .pub-head h1 { font-size: 1.3rem; margin: 0; letter-spacing: -0.01em; }
 .pub-head .t-dim { font-size: 0.8rem; }
 .pub-error { text-align: center; padding: 40px 16px; color: var(--text-muted); }
+
+/* Maintenance reset dialog: what the chosen window will do (js/modules/maintenance-reset.js) */
+.mr-summary { font-size: 0.85rem; line-height: 1.5; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-muted); }
+.mr-summary b { color: var(--text); }

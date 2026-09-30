@@ -283,6 +283,8 @@ sql(`UPDATE users SET premium = 1 WHERE id='${ids.leader}'`);
 // ---- two servers: each schedule channel shows the group roles of its own server
 {
   check('/link a second server G2', /Linked this server/.test(await run('link', [{ name: 'code', value: code }], LEADER, 'G2')));
+  // Keep both spawns on today's post whatever the time of day (their timers moved with earlier kills).
+  sql(`UPDATE bosses SET next_spawn = ${Date.now() + 5 * 60000}, status='waiting' WHERE id IN ('${ven}', '${vio}')`);
   [, d] = await api('GET', `/api/teams/${team}/settings`, null, leader);
   const byId = Object.fromEntries(d.webhooks.schedule.map(x => [x.id, x.guildId]));
   check('schedule channels: 999 in G1, 997 in G2', byId['999'] === 'G1' && byId['997'] === 'G2', d.webhooks.schedule);
@@ -305,6 +307,8 @@ sql(`UPDATE users SET premium = 1 WHERE id='${ids.leader}'`);
   check('/assign replies with the role of its server', /<@&6660000001>/.test(as), as);
   [, d] = await api('GET', `/api/teams/${team}/discord-roles`, null, leader);
   check('discord-roles lists both servers', d.servers?.length === 2 && d.servers.some(x => x.guildId === 'G2' && x.roles.map(r => r.name).join() === 'KON'), d.servers);
+  // Out of the way again: a spawn 5 minutes out would post its own "spawning soon" in the alert tests below.
+  sql(`UPDATE bosses SET next_spawn = ${Date.now() + 6 * 3600000} WHERE id IN ('${ven}', '${vio}')`);
 }
 
 // ---- boss alerts: two messages per spawn, edited in place (lib/boss-alerts.js)
@@ -473,6 +477,43 @@ sql(`UPDATE users SET premium = 1 WHERE id='${ids.leader}'`);
   check('maintenance reset: the bosses it brought up wait 30 minutes before auto-reset (clearing them all takes a while)', waits.length && waits.every(w => w === 30 * 60000), waits);
   check('maintenance reset: cron brings them all up with no per-boss pings', up.every(b => b.status === 'spawned') && !hooks.slice(m).some(h => h.hook === '555' && h.method === 'POST'), [up.map(b => b.status), hooks.slice(m).map(h => [h.hook, h.method])]);
   await api('DELETE', `/api/teams/${team}/bosses/${fx.id}`, null, leader);
+}
+
+// ---- maintenance window: fixed-schedule bosses due while the server was down go up at open too
+{
+  const url = `/api/teams/${team}/bosses/maintenance-reset`;
+  const mk = async (name, rule) => (await api('POST', `/api/teams/${team}/bosses`, { name, ...rule }, leader))[1].id;
+  const now = Date.now(), from = now - 2 * 3600000, openAt = now - 20 * 60000;
+  const winUp = await mk('Win Up', { type: 'fixed', fixedTime: '03:00' });
+  const winReset = await mk('Win Reset', { type: 'weekly', weeklyDay: 3, weeklyTime: '03:00' });
+  const winLater = await mk('Win Later', { type: 'fixed', fixedTime: '03:00' });
+  const late = await mk('Killed Late', { type: 'interval', intervalMs: 3600000 });
+  sql(`UPDATE bosses SET next_spawn=${now - 40 * 60000}, status='spawned', spawned_at=${now - 40 * 60000}, auto_reset_at=${now + 3600000} WHERE id='${winUp}'; ` +
+      `UPDATE bosses SET next_spawn=${now + 3 * 3600000} WHERE id='${winLater}'; ` +
+      `UPDATE bosses SET last_death=${now - 5 * 60000}, next_spawn=${now + 55 * 60000} WHERE id='${late}'; ` +
+      `INSERT INTO schedule_spawns (id, team_id, boss_id, boss_name, spawn_at, day, outcome, ended_at) VALUES ('wr1', '${team}', '${winReset}', 'Win Reset', ${now - 50 * 60000}, '${dayKey(now - 50 * 60000)}', 'reset', ${now - 45 * 60000})`);
+  const row = (id) => rows(`SELECT next_spawn, status, last_death FROM bosses WHERE id='${id}'`)[0];
+  const winResetBefore = row(winReset).next_spawn, lateBefore = row(late).next_spawn;
+
+  let [s1, pv] = await api('POST', url, { openAt, from, preview: true }, leader);
+  check('window preview: fixed bosses due inside it listed, the late kill left alone', s1 === 200 && pv.fixed.slice().sort().join() === 'Win Reset,Win Up' && pv.killed.includes('Killed Late') && pv.reset >= 1, pv);
+  check('window preview changes nothing', row(winUp).status === 'spawned' && row(winReset).next_spawn === winResetBefore && rows(`SELECT id FROM schedule_spawns WHERE id='wr1'`).length === 1, [row(winUp), row(winReset)]);
+  [s1] = await api('POST', url, { openAt, from: openAt + 60000 }, leader);
+  check('window must start before the server opens', s1 === 400, s1);
+
+  [s1, pv] = await api('POST', url, { openAt, from }, leader);
+  check('window reset: fixed bosses due inside it now spawn at open', s1 === 200 && row(winUp).next_spawn === openAt && row(winReset).next_spawn === openAt && row(winUp).status === 'waiting', [pv, row(winUp), row(winReset)]);
+  check('window reset: fixed boss due after open keeps its time; late kill untouched', row(winLater).next_spawn === now + 3 * 3600000 && row(late).next_spawn === lateBefore, [row(winLater), row(late)]);
+  check('window reset: our auto-reset during maintenance is off the schedule post', rows(`SELECT id FROM schedule_spawns WHERE id='wr1'`).length === 0);
+  const [, bd] = await api('GET', `/api/teams/${team}/bosses`, null, leader);
+  check('window remembered for next time', bd.maintenance?.from === from && bd.maintenance?.at === openAt, bd.maintenance);
+
+  await cron(); await sleep(800);
+  const waits = rows(`SELECT auto_reset_at - spawned_at AS w, status FROM bosses WHERE id IN ('${winUp}', '${winReset}')`);
+  check('window reset: they come up and wait 30 minutes like the respawn timers', waits.length === 2 && waits.every(r => r.status === 'spawned' && r.w === 30 * 60000), waits);
+  await api('POST', `/api/teams/${team}/bosses/${winReset}/kill`, {}, leader);
+  check('after the kill a fixed boss goes back to its own schedule', row(winReset).status === 'waiting' && row(winReset).next_spawn > Date.now() + 60000 && row(winReset).next_spawn !== openAt, row(winReset));
+  for (const id of [winUp, winReset, winLater, late]) await api('DELETE', `/api/teams/${team}/bosses/${id}`, null, leader);
 }
 
 // ---- remove every schedule channel -> quiet

@@ -1,4 +1,5 @@
-"""Timers -> Maintenance reset: the dialog counts the right bosses and moves only the respawn timers.
+"""Timers -> Maintenance reset: the dialog offers a maintenance window, its live summary counts the right
+bosses, and applying moves only the respawn timers (no fixed boss was due inside the window).
 Browser against the site proxy (8790) + wrangler dev (8788). Screenshot: tests/.out/maintenance_dialog.png"""
 import json, os, sys, time, urllib.request, urllib.parse
 from playwright.sync_api import sync_playwright
@@ -38,19 +39,25 @@ with sync_playwright() as p:
     pg.evaluate(f"openTeam('{team}')"); pg.wait_for_timeout(1200)
     pg.evaluate("openModule('timers')"); pg.wait_for_timeout(1200)
     pg.click('[data-role="menu"] summary'); pg.wait_for_timeout(200)
-    pg.click('[data-action="maintenance"]'); pg.wait_for_timeout(600)
-    text = pg.inner_text('.modal-card')
-    check('dialog: counts 3 respawn timers and 1 fixed boss', '<b>' not in text and 'all 3 of them' in text and '1 fixed-schedule boss keeps its time' in text, text)
-    check('dialog: button says what it does', pg.inner_text('[data-act="apply"]') == 'Reset 3 timers', pg.inner_text('[data-act="apply"]'))
+    pg.click('[data-action="maintenance"]'); pg.wait_for_timeout(1500)
+    f, t = pg.input_value('[data-role="from"]'), pg.input_value('[data-role="to"]')
+    mins = lambda v: int(v[:2]) * 60 + int(v[3:])
+    check('dialog: first time, the window is the 5 hours up to now', (mins(t) - mins(f)) % 1440 == 300, [f, t])
+    text = pg.inner_text('[data-role="mr-summary"]')
+    check('dialog: summary counts 3 respawn timers and 1 fixed boss keeping its time', '<b>' not in text and '3 respawn timers go up at' in text and '1 fixed-schedule boss keeps its time' in text, text)
+    check('dialog: button says what it does', pg.inner_text('[data-act="apply"]') == 'Reset 3 timers' and pg.is_enabled('[data-act="apply"]'), pg.inner_text('[data-act="apply"]'))
     os.makedirs(OUT, exist_ok=True)
     pg.locator('.modal-card').screenshot(path=os.path.join(OUT, 'maintenance_dialog.png'))
     t0 = int(time.time() * 1000)
     pg.click('[data-act="apply"]'); pg.wait_for_timeout(1500)
     after = bosses()
     opened = [after[n]['next_spawn'] for n in ('Venatus', 'Viorent', 'Ego')]
-    check('apply: all respawn timers at the same open time (now, to the minute)', len(set(opened)) == 1 and abs(opened[0] - t0) < 90000, opened)
+    check('apply: all respawn timers at the same open time (the end of the window, now)', len(set(opened)) == 1 and 0 <= t0 - opened[0] < 6 * 60000, [opened, t0])
     check('apply: fixed boss untouched', after['Saphirus']['next_spawn'] == sap_before)
     check('apply: dialog closed', pg.locator('.modal-card').count() == 0)
+    pg.click('[data-role="menu"] summary'); pg.wait_for_timeout(200)
+    pg.click('[data-action="maintenance"]'); pg.wait_for_timeout(1500)
+    check('dialog again: offers the window just used', pg.input_value('[data-role="from"]') == f and pg.input_value('[data-role="to"]') == t, [pg.input_value('[data-role="from"]'), pg.input_value('[data-role="to"]')])
     b.close()
 
 print(f'{sum(res)}/{len(res)} checks passed')

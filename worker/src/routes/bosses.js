@@ -34,9 +34,11 @@ export const routes = [
     // Spawn groups ride along (one batch = one round trip) so timer rows can show and assign them.
     const [bosses, settings] = await env.DB.batch([
       env.DB.prepare('SELECT * FROM bosses WHERE team_id = ? ORDER BY next_spawn ASC').bind(teamId),
-      env.DB.prepare('SELECT spawn_groups FROM team_settings WHERE team_id = ?').bind(teamId),
+      env.DB.prepare('SELECT spawn_groups, maintenance_from, maintenance_at FROM team_settings WHERE team_id = ?').bind(teamId),
     ]);
-    return json({ bosses: bosses.results, groups: parseGroups(settings.results[0]?.spawn_groups) });
+    const st = settings.results[0] || {};
+    // maintenance = the last reset's window, which the Maintenance reset dialog offers again
+    return json({ bosses: bosses.results, groups: parseGroups(st.spawn_groups), maintenance: { from: st.maintenance_from ?? null, at: st.maintenance_at ?? null } });
   } },
 
   // POST /api/teams/:id/bosses — add boss

@@ -241,7 +241,7 @@ async function initDB(db) {
     ['team_settings', 'discord_guild_id'], ['discord_guilds', null], ['attendance_claims', null], ['team_settings', 'attendance_self_checkin'],
     ['schedule_spawns', null], ['team_settings', 'spawn_groups'], ['bosses', 'spawn_group'], ['app_state', null],
     ['discord_cleanup', null], ['team_settings', 'discord_delete_next_min'], ['bosses', 'alert_spawn_msg'], ['bosses', 'alternate_groups'],
-    ['push_subs', null], ['push_prefs', null], ['team_settings', 'maintenance_count'],
+    ['push_subs', null], ['push_prefs', null], ['team_settings', 'maintenance_count'], ['team_settings', 'maintenance_from'],
   ];
   const tables = await db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'").all();
   const createSql = Object.fromEntries(tables.results.map(t => [t.name, t.sql || '']));
@@ -396,6 +396,8 @@ async function initDB(db) {
       // the last maintenance reset (routes/maintenance-reset.js), so phones show one alert for it
       'ALTER TABLE team_settings ADD COLUMN maintenance_at INTEGER',
       'ALTER TABLE team_settings ADD COLUMN maintenance_count INTEGER',
+      // start of that maintenance window: the reset dialog offers the same times next time
+      'ALTER TABLE team_settings ADD COLUMN maintenance_from INTEGER',
       `CREATE TABLE IF NOT EXISTS join_requests (
         id TEXT PRIMARY KEY,
         team_id TEXT NOT NULL,
