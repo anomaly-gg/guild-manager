@@ -18,6 +18,7 @@ cron). Needs Node, Python with `playwright`, and internet for `npx wrangler` and
 | `webhooks-unit` (unit) | Discord channel lists: stored format, single URLs / message ids saved before lists, main-channel fallback, ids kept per channel |
 | `groups-unit` (unit) | Spawn-group roles per Discord server: what is saved, what each server sees, filing roles saved before roles were per server |
 | `maintenance-unit` (unit) | Maintenance reset window: which bosses go up at server open (respawn timers, fixed bosses due inside the window), which keep their times, a kill after open left alone |
+| `tz-unit` (unit) | Team-clock math without Intl (lib/tz.js): formats, day keys/starts and fixed/weekly spawns match Intl in fixed and DST zones; Asia/Manila never builds an Intl formatter |
 | `billing` | Gumroad checkout links, ping, license activation, cron recheck/revoke (mock Gumroad on 8799) |
 | `presets` | Game preset list and adding a preset to a team |
 | `account` | Account export and deletion |

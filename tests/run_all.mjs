@@ -29,6 +29,7 @@ const SUITES = [
   { name: 'webhooks-unit', db: null, cmd: ['node', join(TESTS, 'unit/webhooks.test.mjs')] },
   { name: 'groups-unit', db: null, cmd: ['node', join(TESTS, 'unit/spawn-groups.test.mjs')] },
   { name: 'maintenance-unit', db: null, cmd: ['node', join(TESTS, 'unit/maintenance.test.mjs')] },
+  { name: 'tz-unit', db: null, cmd: ['node', join(TESTS, 'unit/tz.test.mjs')] },
   { name: 'billing', db: 'api', gumroad: true, cmd: [PY, join(TESTS, 'api/billing.test.py'), WORKER] },
   { name: 'presets', db: 'api', cmd: [PY, join(TESTS, 'api/presets.test.py')] },
   { name: 'account', db: 'api', cmd: [PY, join(TESTS, 'api/account.test.py')] },

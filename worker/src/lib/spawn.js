@@ -1,29 +1,27 @@
 // Boss spawn-time math (all in the team's timezone). `from` (default: now) lets the daily schedule
 // project later spawns: the first spawn strictly after that moment.
 
+import { wall, fromWall } from './tz.js';
+
 export function getNextFixedSpawn(timeStr, tz, from = Date.now()) {
   const [h, m] = timeStr.split(':').map(Number);
-  const now = new Date(from);
-  const local = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+  const local = wall(from, tz);
   const spawn = new Date(local);
-  spawn.setHours(h, m, 0, 0);
-  if (spawn <= local) spawn.setDate(spawn.getDate() + 1);
-  const offset = now.getTime() - local.getTime();
-  return spawn.getTime() + offset;
+  spawn.setUTCHours(h, m, 0, 0);
+  if (spawn <= local) spawn.setUTCDate(spawn.getUTCDate() + 1);
+  return fromWall(spawn, tz);
 }
 
 export function getNextWeeklySpawn(targetDay, timeStr, tz, from = Date.now()) {
   const [h, m] = timeStr.split(':').map(Number);
-  const now = new Date(from);
-  const local = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+  const local = wall(from, tz);
   const spawn = new Date(local);
-  spawn.setHours(h, m, 0, 0);
-  let daysUntil = targetDay - local.getDay();
+  spawn.setUTCHours(h, m, 0, 0);
+  let daysUntil = targetDay - local.getUTCDay();
   if (daysUntil < 0) daysUntil += 7;
   if (daysUntil === 0 && spawn <= local) daysUntil = 7;
-  spawn.setDate(spawn.getDate() + daysUntil);
-  const offset = now.getTime() - local.getTime();
-  return spawn.getTime() + offset;
+  spawn.setUTCDate(spawn.getUTCDate() + daysUntil);
+  return fromWall(spawn, tz);
 }
 
 export function getNextBiweeklySpawn(days, tz, from = Date.now()) {

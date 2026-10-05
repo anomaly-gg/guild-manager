@@ -6,23 +6,10 @@
 
 import { groupTag, groupName } from './spawn-groups.js';
 import { spawnsInWindow } from './spawn-projection.js';
+import { clockIn, dayLabel, weekdayLabel, dayKey, fromWall } from './tz.js';
 
-// Intl formatters are costly to build; the cron renders every linked team each minute, so cache per zone.
-const fmtCache = new Map();
-function formatter(kind, tz) {
-  const key = kind + '|' + tz;
-  if (!fmtCache.has(key)) {
-    const opts = {
-      time: ['en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz }],
-      label: ['en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: tz }],
-      weekday: ['en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz }],
-      key: ['en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz }],
-    }[kind];
-    fmtCache.set(key, new Intl.DateTimeFormat(...opts));
-  }
-  return fmtCache.get(key);
-}
-const safeTz = (tz) => { try { formatter('key', tz); return tz; } catch { return 'UTC'; } };
+// Team-clock formatting lives in lib/tz.js (no Intl for fixed-offset zones: cron CPU).
+export { clockIn, dayLabel, weekdayLabel, dayKey };
 
 export function fmtDuration(ms) {
   const min = Math.max(0, Math.round(ms / 60000));
@@ -32,15 +19,6 @@ export function fmtDuration(ms) {
   if (h) return `${h}h`;
   return `${m}m`;
 }
-
-// "2:04 AM" in the team clock. ICU puts a narrow no-break space before AM/PM; keep it, it renders fine.
-export const clockIn = (ts, tz) => formatter('time', safeTz(tz)).format(new Date(ts));
-// "29 September 2026"
-export const dayLabel = (ts, tz) => formatter('label', safeTz(tz)).format(new Date(ts));
-// "Wednesday 30 September"
-export const weekdayLabel = (ts, tz) => formatter('weekday', safeTz(tz)).format(new Date(ts));
-// "2026-09-29": the team-clock calendar day a timestamp falls on (schedule post / spawn record key).
-export const dayKey = (ts, tz) => formatter('key', safeTz(tz)).format(new Date(ts));
 
 // ---- rows
 
@@ -129,14 +107,7 @@ export function nextSpawnsText(bosses, tz, now = Date.now(), limit = 10, groups 
 // 00:00 of a YYYY-MM-DD day in the team zone, as epoch ms.
 export function dayStart(key, tz) {
   const [y, m, d] = key.split('-').map(Number);
-  const guess = Date.UTC(y, m - 1, d);
-  const offset = (ts) => {
-    const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })
-      .formatToParts(new Date(ts)).reduce((a, x) => (a[x.type] = x.value, a), {});
-    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute) - ts;
-  };
-  const first = guess - offset(guess);
-  return guess - offset(first);
+  return fromWall(Date.UTC(y, m - 1, d), tz);
 }
 
 // Daily post body for calendar day `day` (dayKey): finished spawns recorded that day + every spawn
