@@ -1,4 +1,5 @@
-// Cron tick (every minute): boss timers, daily schedule posts, event notifications, recurring events, DKP decay, auctions, cleanup, license recheck
+// Cron tick (every minute): boss timers, daily schedule posts, event notifications, phone alerts,
+// reply clean-up; every 10 minutes (SLOT): recurring events, DKP decay, auctions, cleanup, license recheck
 
 import { sendDiscord, discordCalls } from '../lib/discord.js';
 import { alertHooks } from '../lib/webhooks.js';
@@ -16,12 +17,18 @@ import { cronPush, MAX_PER_RUN } from '../lib/push-send.js';
 // devices over the budget are woken on the next minute.
 const SUBREQUESTS = 50, RESERVE = 16, MIN_PUSH = 5;
 
-export async function handleScheduled(env) {
+// Free plan: 10 ms CPU per run, and every D1 query costs some. Work that can wait a few minutes
+// runs in its own minute of a 10-minute cycle, so no tick pays for more than one of these.
+// (Minute 7 of the hour is taken by the schedule_spawns prune in lib/schedule-post.js.)
+const SLOT = { commands: 0, recurring: 2, auctions: 4, decay: 6, cleanup: 8, licenses: 9 };
+
+export async function handleScheduled(env, scheduledTime = Date.now()) {
   // NOTE: initDB intentionally NOT called here. Schema is created by handleRequest
   // on first user request. Running initDB on every cron tick was burning ~30ms CPU
   // on ~40 CREATE TABLE IF NOT EXISTS + migration probes, blowing the Workers Free
   // 10ms budget. Cron assumes tables exist.
   const now = Date.now();
+  const slot = new Date(scheduledTime).getUTCMinutes() % 10;   // tests pick it: /__scheduled?time=
   discordCalls.reset();
 
   const dbWrites = [];
@@ -31,15 +38,19 @@ export async function handleScheduled(env) {
   const pushChanges = [];             // phone alerts: { teamId, kind, groupId } (lib/push-send.js)
 
   // --- BOSSES: merge 'waiting' (warn/spawn) + 'spawned' (auto-reset) into one
-  //     query with team_settings JOINed, eliminating per-boss N+1 settings lookups. ---
+  //     query with team_settings JOINed, eliminating per-boss N+1 settings lookups.
+  //     Only the bosses something happens to this tick (the same tests as the loop below):
+  //     loading every boss each minute was most of the free plan's 10 ms CPU. ---
   try {
     const bosses = await env.DB.prepare(`
       SELECT b.*,
              ts.webhook_url, ts.webhook_boss, ts.on_warning, ts.on_spawn, ts.timezone, ts.spawn_groups AS team_groups, ts.maintenance_at
       FROM bosses b
       LEFT JOIN team_settings ts ON ts.team_id = b.team_id
-      WHERE b.status IN ('waiting', 'spawned')
-    `).all();
+      WHERE (b.status = 'waiting' AND (b.next_spawn IS NULL OR b.next_spawn <= ?
+               OR (COALESCE(b.warned, 0) = 0 AND b.next_spawn <= ? + COALESCE(NULLIF(b.alert_minutes, 0), 5) * 60000)))
+         OR (b.status = 'spawned' AND b.auto_reset_at <= ?)
+    `).bind(now, now, now).all();
 
     for (const boss of bosses.results) {
       try {
@@ -177,7 +188,7 @@ export async function handleScheduled(env) {
   } catch (e) { console.error('Schedule post error:', e); }
 
   // --- Recurring event auto-create. ---
-  try {
+  if (slot === SLOT.recurring) try {
     const recurringEnded = await env.DB.prepare(
       "SELECT * FROM events WHERE recurrence IS NOT NULL AND recurrence != 'none' AND event_time + duration_minutes * 60000 <= ? AND end_notified = 1"
     ).bind(now).all();
@@ -210,7 +221,7 @@ export async function handleScheduled(env) {
 
   // --- DKP decay: JOIN ledger balance into the inactive-members query
   //     to eliminate per-member balance lookup. ---
-  try {
+  if (slot === SLOT.decay) try {
     const decayTeams = await env.DB.prepare(
       'SELECT ts.* FROM team_settings ts JOIN teams t ON t.id = ts.team_id JOIN users u ON u.id = t.owner_id WHERE ts.dkp_decay_enabled = 1 AND u.premium = 1 AND (ts.dkp_decay_last_run IS NULL OR ts.dkp_decay_last_run < unixepoch() - ts.dkp_decay_interval_days * 86400)'
     ).all();
@@ -239,7 +250,7 @@ export async function handleScheduled(env) {
   } catch (e) { console.error('DKP decay error:', e); }
 
   // --- Auctions: JOIN top bid into the expired auctions query. ---
-  try {
+  if (slot === SLOT.auctions) try {
     const expiredAuctions = await env.DB.prepare(`
       SELECT a.*,
              (SELECT user_id FROM dkp_bids WHERE auction_id = a.id ORDER BY amount DESC LIMIT 1) as top_user,
@@ -265,7 +276,7 @@ export async function handleScheduled(env) {
   } catch (e) { console.error('Auction close error:', e); }
 
   // --- Auto-delete old events. Collect all deletes into one batch. ---
-  try {
+  if (slot === SLOT.cleanup) try {
     const allSettings = await env.DB.prepare('SELECT team_id, auto_delete_events_days FROM team_settings WHERE auto_delete_events_days > 0').all();
     if (allSettings.results.length > 0) {
       const deleteWrites = [];
@@ -285,7 +296,7 @@ export async function handleScheduled(env) {
   } catch (e) { console.error('Auto-delete error:', e); }
 
   // --- Join request cleanup: single statement, already optimal. ---
-  try {
+  if (slot === SLOT.cleanup) try {
     await env.DB.prepare("DELETE FROM join_requests WHERE status != 'pending' AND resolved_at < unixepoch() - 2592000").run();
   } catch (e) { console.error('Join request cleanup error:', e); }
 
@@ -294,13 +305,13 @@ export async function handleScheduled(env) {
     await runReplyCleanup(env);
   } catch (e) { console.error('Reply cleanup error:', e); }
 
-  // --- Discord slash commands: re-register after a deploy that changed them (once per isolate). ---
-  try {
+  // --- Discord slash commands: re-register after a deploy that changed them (once per isolate, on its SLOT minute). ---
+  if (slot === SLOT.commands) try {
     await syncCommands(env);
   } catch (e) { console.error('Command sync error:', e); }
 
   // --- Gumroad licenses: re-verify a few whose last check is older than ~20 h (see lib/gumroad.js). ---
-  try {
+  if (slot === SLOT.licenses) try {
     await recheckLicenses(env);
   } catch (e) { console.error('License recheck error:', e); }
 }

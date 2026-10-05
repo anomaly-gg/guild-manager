@@ -72,7 +72,8 @@ async function run(name, options, who, guild = 'G1') {
 }
 const sql = (q) => execSync(`npx wrangler d1 execute guild-manager --local --json --command "${q.replace(/"/g, '\\"')}"`, { cwd: WORKER_DIR, shell: true, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
 const rows = (q) => { const out = sql(q); return JSON.parse(out.slice(out.indexOf('[')))[0].results; };
-const cron = () => fetch(W + '/__scheduled?cron=*+*+*+*+*').then(r => r.text());
+// time = a minute ending in 0: the cron's slash-command sync slot (SLOT in cron/scheduled.js)
+const cron = () => fetch(W + '/cdn-cgi/local/scheduled?cron=*+*+*+*+*&time=' + (Date.now() - Date.now() % 600000)).then(r => r.text());
 // wait for the next schedule webhook call after index `from`
 async function nextHook(from, pred = () => true, ms = 6000) {
   for (let t = 0; t < ms; t += 150) { const h = hooks.slice(from).find(pred); if (h) return h; await sleep(150); }
@@ -237,6 +238,15 @@ check('failed rollover post: day rolled, yesterday kept, the channel left free t
 failPosts = false; mark = hooks.length; await cron();
 h = await nextHook(mark, x => x.method === 'POST');
 check('retried on the next cron minute', !!h && msgOf(schedRow().schedule_msg_id, '999') === h.msg);
+
+// ---- a run killed between the post and saving its id leaves a '~<ms>' claim -> posted again once stale
+sql(`UPDATE team_settings SET schedule_msg_id='{"999":"~${Date.now()}"}' WHERE team_id='${team}'`);
+mark = hooks.length; await cron(); await sleep(1500);
+check('fresh posting claim: left alone (another run is posting)', !hooks.slice(mark).some(x => x.method === 'POST'), hooks.slice(mark));
+sql(`UPDATE team_settings SET schedule_msg_id='{"999":"~${Date.now() - 10 * 60000}"}' WHERE team_id='${team}'`);
+mark = hooks.length; await cron();
+h = await nextHook(mark, x => x.method === 'POST');
+check('stale posting claim: posted again and the id saved', !!h && msgOf(schedRow().schedule_msg_id, '999') === h.msg, [h, schedRow()]);
 
 // ---- webhook refused (4xx) -> marked, not retried every minute; adding the channel again retries
 sql(`UPDATE team_settings SET schedule_msg_id='{}' WHERE team_id='${team}'`);

@@ -99,7 +99,9 @@ subprocess.run(['npx', 'wrangler', 'd1', 'execute', 'guild-manager', '--local', 
                cwd=sys.argv[1], shell=True, capture_output=True)
 set_mock(key='GOOD-MONTHLY-0001', purchase={'product_id': PROD_M, 'refunded': False, 'chargebacked': False, 'subscription_ended_at': None,
                                             'subscription_cancelled_at': '2026-09-22T00:00:00Z', 'subscription_failed_at': None, 'email': 'b@e.com', 'test': True})
-s, d = req('GET', '/__scheduled'); time.sleep(3)
+# time = a minute ending in 9: the cron's license recheck slot (SLOT in worker/src/cron/scheduled.js)
+RECHECK = lambda: '/cdn-cgi/local/scheduled?time=%d' % (int(time.time() * 1000) // 600000 * 600000 + 9 * 60000)
+s, d = req('GET', RECHECK()); time.sleep(3)
 check('cron ran', s == 200, (s, d))
 check('recheck revoked user1 (membership cancelled at Gumroad)', not me(t1)['premium'], me(t1))
 check('recheck kept user2 lifetime', me(t2)['premium'] and me(t2)['premiumType'] == 'lifetime', me(t2))
@@ -108,7 +110,7 @@ set_mock(key='GOOD-MONTHLY-0001', purchase={'product_id': PROD_M, 'refunded': Fa
                                             'subscription_cancelled_at': None, 'subscription_failed_at': None, 'email': 'b@e.com', 'test': True})
 subprocess.run(['npx', 'wrangler', 'd1', 'execute', 'guild-manager', '--local', '--command', 'UPDATE users SET license_checked_at = 0'],
                cwd=sys.argv[1], shell=True, capture_output=True)
-req('GET', '/__scheduled'); time.sleep(3)
+req('GET', RECHECK()); time.sleep(3)
 check('recheck re-grants a restarted membership', me(t1)['premium'] and me(t1)['premiumType'] == 'monthly', me(t1))
 
 # trial still works

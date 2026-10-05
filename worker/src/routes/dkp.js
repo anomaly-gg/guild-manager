@@ -120,6 +120,8 @@ export const routes = [
     const auction = await env.DB.prepare('SELECT * FROM dkp_auctions WHERE id = ? AND team_id = ? AND status = ?')
       .bind(auctionId, teamId, 'open').first();
     if (!auction) return json({ error: 'Auction not found or closed' }, 404);
+    // The cron closes expired auctions only every few minutes: no bids in between.
+    if (auction.expires_at && auction.expires_at < Date.now() / 1000) return json({ error: 'Auction has ended' }, 400);
 
     const body = await safeJson(request);
     if (!body) return json({ error: "Invalid request body" }, 400);
