@@ -117,6 +117,13 @@
 .tf-inline input[type="time"] { width: auto; }
 .tf-inline b { color: var(--text-muted); font-weight: 600; }
 .tf-amp { color: var(--text-dim); padding: 0 2px; }
+/* list-based spawn rules (times each day / days of the week): rows + add/remove */
+.tf-list { display: flex; flex-direction: column; gap: 6px; }
+.tf-row { flex-wrap: nowrap; }
+.tf-del { border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-muted); width: 28px; padding: 4px 0; cursor: pointer; line-height: 1; font-size: 1rem; flex: 0 0 auto; }
+.tf-del:hover { color: var(--text); border-color: var(--accent); }
+.tf-add { border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); background: none; color: var(--text-muted); padding: 5px 10px; cursor: pointer; font-size: 0.8rem; margin-top: 6px; align-self: flex-start; }
+.tf-add:hover { color: var(--text); border-color: var(--accent); }
 .tf-check { flex-direction: row; align-items: center; gap: 8px; }
 .tf-check input { width: auto; accent-color: var(--accent); }
 .tf-check span { text-transform: none; letter-spacing: 0; font-size: 0.85rem; font-weight: 500; color: var(--text); }

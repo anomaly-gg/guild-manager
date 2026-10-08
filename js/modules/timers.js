@@ -3,7 +3,7 @@
 // (teamBosses, teamData, teamTab, currentTeamId, api, showToast, guard, loadTeamBosses, renderTeamView).
 // Exposed to the shell as window.Timers.
 
-import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20260929e';
+import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20261008a';
 
 let search = '';
 let tickTimer = null;
@@ -196,7 +196,13 @@ function modal(inner, { wide } = {}) {
     return back;
 }
 
-const TYPE_LABEL = { interval: 'Every X hours', fixed: 'Daily at a time', weekly: 'Weekly', twicedaily: 'Twice daily', biweekly: 'Twice a week' };
+const TYPE_LABEL = { interval: 'Every X hours', fixed: 'Daily at a time', weekly: 'Weekly', twicedaily: 'Times each day', biweekly: 'Days of the week' };
+
+// One row of the two list-based rules. Both lists accept any number of rows (e.g. an 8-times-a-day
+// rift or a Mon/Thu/Sat boss); the last row can't be removed.
+const dayOptions = (val) => DAY.map((d, i) => `<option value="${i}" ${val === i ? 'selected' : ''}>${d}</option>`).join('');
+const twiceRow = (t) => `<div class="tf-inline tf-row"><input type="time" value="${esc(t || '')}"><button type="button" class="tf-del" data-del aria-label="Remove">&times;</button></div>`;
+const biRow = (d) => `<div class="tf-inline tf-row"><select>${dayOptions(d?.day ?? 1)}</select><input type="time" value="${esc(d?.time || '')}"><button type="button" class="tf-del" data-del aria-label="Remove">&times;</button></div>`;
 
 function bossFormHtml(b) {
     const j = (v) => { try { return typeof v === 'string' ? JSON.parse(v) : (v || []); } catch { return []; } };
@@ -204,7 +210,7 @@ function bossFormHtml(b) {
     const bi = b?.type === 'biweekly' ? j(b.biweekly_days) : [];
     const ih = b?.interval_ms ? Math.floor(b.interval_ms / 3600000) : '';
     const im = b?.interval_ms ? Math.round((b.interval_ms % 3600000) / 60000) : '';
-    const daySel = (id, val) => `<select id="${id}">${DAY.map((d, i) => `<option value="${i}" ${val === i ? 'selected' : ''}>${d}</option>`).join('')}</select>`;
+    const daySel = (id, val) => `<select id="${id}">${dayOptions(val)}</select>`;
     return `
         <h2>${b ? 'Edit boss' : 'Add boss'}</h2>
         <form class="tform" id="bossForm">
@@ -221,11 +227,13 @@ function bossFormHtml(b) {
             <div class="tf-field tf-rule" data-rule="weekly"><span>Day &amp; time</span>
                 <div class="tf-inline">${daySel('bfWeeklyDay', b?.weekly_day ?? 1)}<input id="bfWeeklyTime" type="time" value="${esc(b?.weekly_time || '')}"></div>
             </div>
-            <div class="tf-field tf-rule" data-rule="twicedaily"><span>Times</span>
-                <div class="tf-inline"><input id="bfTwice1" type="time" value="${esc(twice[0] || '')}"><input id="bfTwice2" type="time" value="${esc(twice[1] || '')}"></div>
+            <div class="tf-field tf-rule tf-wide" data-rule="twicedaily"><span>Times <em>one or more per day</em></span>
+                <div class="tf-list" data-list="twice">${(twice.length ? twice : ['', '']).map(twiceRow).join('')}</div>
+                <button type="button" class="tf-add" data-add="twice">+ Add time</button>
             </div>
-            <div class="tf-field tf-rule tf-wide" data-rule="biweekly"><span>Two days &amp; times</span>
-                <div class="tf-inline">${daySel('bfBiDay1', bi[0]?.day ?? 1)}<input id="bfBiTime1" type="time" value="${esc(bi[0]?.time || '')}"><span class="tf-amp">&amp;</span>${daySel('bfBiDay2', bi[1]?.day ?? 4)}<input id="bfBiTime2" type="time" value="${esc(bi[1]?.time || '')}"></div>
+            <div class="tf-field tf-rule tf-wide" data-rule="biweekly"><span>Days &amp; times</span>
+                <div class="tf-list" data-list="bi">${(bi.length ? bi : [{ day: 1 }, { day: 4 }]).map(biRow).join('')}</div>
+                <button type="button" class="tf-add" data-add="bi">+ Add day</button>
             </div>
             <label class="tf-field"><span>Spawn window <em>optional, minutes</em></span><input id="bfWindow" type="number" min="0" max="1440" placeholder="0" value="${b?.window_ms ? Math.round(b.window_ms / 60000) : ''}"></label>
             <label class="tf-field"><span>Alert before <em>minutes</em></span><input id="bfAlert" type="number" min="1" max="120" value="${b?.alert_minutes ?? 5}"></label>
@@ -247,6 +255,12 @@ function openBossModal(b) {
     };
     showRule();
     form.querySelector('#bfType').addEventListener('change', showRule);
+    form.addEventListener('click', (e) => {
+        const add = e.target.closest('[data-add]');
+        if (add) { form.querySelector(`[data-list="${add.dataset.add}"]`).insertAdjacentHTML('beforeend', add.dataset.add === 'twice' ? twiceRow('') : biRow()); return; }
+        const del = e.target.closest('[data-del]');
+        if (del) { const list = del.closest('.tf-list'); if (list.children.length > 1) del.closest('.tf-row').remove(); }
+    });
     back.querySelector('[data-close]:not(.modal-backdrop)').addEventListener('click', closeModal);
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -287,13 +301,15 @@ function readBossForm(form) {
         body.weeklyDay = parseInt(v('bfWeeklyDay')); body.weeklyTime = v('bfWeeklyTime');
         if (!body.weeklyTime) { showToast('Pick a time'); return null; }
     } else if (type === 'twicedaily') {
-        const t1 = v('bfTwice1'), t2 = v('bfTwice2');
-        if (!t1 || !t2) { showToast('Pick both times'); return null; }
-        body.twiceDailyTimes = [t1, t2];
+        const times = [...form.querySelectorAll('[data-list="twice"] input[type="time"]')].map(i => i.value).filter(Boolean);
+        if (!times.length) { showToast('Pick at least one time'); return null; }
+        body.twiceDailyTimes = [...new Set(times)].sort();
     } else if (type === 'biweekly') {
-        const t1 = v('bfBiTime1'), t2 = v('bfBiTime2');
-        if (!t1 || !t2) { showToast('Pick both times'); return null; }
-        body.biweeklyDays = [{ day: parseInt(v('bfBiDay1')), time: t1 }, { day: parseInt(v('bfBiDay2')), time: t2 }];
+        const days = [...form.querySelectorAll('[data-list="bi"] .tf-row')]
+            .map(r => ({ day: parseInt(r.querySelector('select').value), time: r.querySelector('input[type="time"]').value }))
+            .filter(d => d.time);
+        if (!days.length) { showToast('Pick at least one day & time'); return null; }
+        body.biweeklyDays = days;
     }
     return body;
 }

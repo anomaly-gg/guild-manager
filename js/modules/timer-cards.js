@@ -37,7 +37,10 @@ export function scheduleText(boss) {
         case 'interval': return 'Every ' + fmtDuration(boss.interval_ms || 0);
         case 'fixed': return 'Daily ' + (boss.fixed_time || '');
         case 'weekly': return `${DAY[boss.weekly_day] ?? ''} ${boss.weekly_time || ''}`;
-        case 'twicedaily': return 'Daily ' + (parseJson(boss.biweekly_days, []) || []).join(' & ');
+        case 'twicedaily': {
+            const t = parseJson(boss.biweekly_days, []) || [];
+            return t.length > 3 ? `${t.length}× daily ${t[0]}–${t[t.length - 1]}` : 'Daily ' + t.join(' & ');
+        }
         case 'biweekly': return (parseJson(boss.biweekly_days, []) || []).map(d => `${DAY[d.day] ?? ''} ${d.time}`).join(' & ');
         default: return '';
     }
