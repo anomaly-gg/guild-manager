@@ -80,6 +80,10 @@ const CHIP = {
     spawned: '<span class="chip chip-danger">Spawned</span>',
 };
 
+// Timer categories besides the default (boss, unlabeled): a small chip on the meta line,
+// so schedule timers like rifts or weekly resets don't read as bosses.
+const CATEGORY_LABEL = { event: 'Event', reset: 'Reset' };
+
 export function stateIcon(key) {
     if (key === 'spawned' || key === 'window') return '&#9888;';
     return '';
@@ -128,8 +132,10 @@ export function cardHtml(boss, opts = {}, now = Date.now()) {
     // Schedules are written in the team zone; say so when the viewer's clock differs (opts.teamTimeNote).
     const sched = scheduleText(boss);
     const schedNote = sched && boss.type !== 'interval' && opts.teamTimeNote ? ` <span class="tcard-tz">${esc(opts.teamTimeNote)}</span>` : '';
-    const meta = [sched ? sched + schedNote : '', boss.location ? esc(boss.location) : ''].filter(Boolean).join(' · ');
-    const sub = boss.last_death ? `Killed ${new Date(boss.last_death).toLocaleString([], zoned({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}` : 'No kill logged yet';
+    const cat = CATEGORY_LABEL[boss.category] ? `<span class="chip chip-muted tcard-cat">${CATEGORY_LABEL[boss.category]}</span> ` : '';
+    const meta = cat + [sched ? sched + schedNote : '', boss.location ? esc(boss.location) : ''].filter(Boolean).join(' · ');
+    const sub = boss.last_death ? `Killed ${new Date(boss.last_death).toLocaleString([], zoned({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}`
+        : (boss.category ? 'Runs on schedule' : 'No kill logged yet');
     const windowNote = boss.window_ms ? ` · window ${fmtDuration(boss.window_ms)}` : '';
     const actions = opts.readOnly ? '' : `
         <div class="tcard-actions">

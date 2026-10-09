@@ -3,7 +3,7 @@
 // (teamBosses, teamData, teamTab, currentTeamId, api, showToast, guard, loadTeamBosses, renderTeamView).
 // Exposed to the shell as window.Timers.
 
-import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20261008a';
+import { cardHtml, updateCard, bossState, sortBosses, groupedListHtml, scheduleText, setDisplayTimeZone, esc, DAY, fmtDuration } from './timer-cards.js?v=20261009a';
 
 let search = '';
 let tickTimer = null;
@@ -220,6 +220,9 @@ function bossFormHtml(b) {
             <label class="tf-field"><span>Spawn rule</span>
                 <select id="bfType">${Object.entries(TYPE_LABEL).map(([k, v]) => `<option value="${k}" ${(b?.type || 'interval') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
             </label>
+            <label class="tf-field"><span>Category</span>
+                <select id="bfCat">${[['', 'Boss'], ['event', 'Event'], ['reset', 'Reset']].map(([k, v]) => `<option value="${k}" ${(b?.category || '') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+            </label>
             <div class="tf-field tf-rule" data-rule="interval"><span>Respawn after</span>
                 <div class="tf-inline"><input id="bfHours" type="number" min="0" max="999" placeholder="h" value="${ih}"><b>h</b><input id="bfMinutes" type="number" min="0" max="59" placeholder="m" value="${im}"><b>m</b></div>
             </div>
@@ -286,6 +289,7 @@ function readBossForm(form) {
     const type = v('bfType');
     const body = {
         name, type,
+        category: v('bfCat') || null,
         location: v('bfLocation').trim() || null,
         alertMinutes: parseInt(v('bfAlert')) || 5,
         autoResetMinutes: parseInt(v('bfReset')) || 5,
@@ -321,6 +325,7 @@ function changedFields(b, full) {
     const out = {};
     if (full.name !== b.name) out.name = full.name;
     if ((full.location || null) !== (b.location || null)) out.location = full.location;
+    if ((full.category || null) !== (b.category || null)) out.category = full.category;
     if (full.alertMinutes !== (b.alert_minutes ?? 5)) out.alertMinutes = full.alertMinutes;
     if (full.autoResetMinutes !== (b.auto_reset_minutes ?? 5)) out.autoResetMinutes = full.autoResetMinutes;
     if (full.windowMs !== (b.window_ms || 0)) out.windowMs = full.windowMs;

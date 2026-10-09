@@ -2,7 +2,7 @@
 
 import { json, safeJson } from '../lib/http.js';
 import { getNextFixedSpawn, getNextWeeklySpawn, getNextBiweeklySpawn, getNextTwiceDailySpawn, calcNextSpawn } from '../lib/spawn.js';
-import { bossInsertStmt } from '../lib/boss-create.js';
+import { bossInsertStmt, CATEGORIES } from '../lib/boss-create.js';
 import { killBoss } from '../lib/boss-kill.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { limitsFor } from '../lib/limits.js';
@@ -113,6 +113,7 @@ export const routes = [
       sets.push('name = ?'); vals.push(name);
     }
     if (body.location !== undefined) { sets.push('location = ?'); vals.push(body.location ? String(body.location).trim().slice(0, 80) : null); }
+    if (body.category !== undefined) { sets.push('category = ?'); vals.push(CATEGORIES.has(body.category) ? body.category : null); }
     if (body.alertMinutes !== undefined) { sets.push('alert_minutes = ?'); vals.push(Math.max(1, Math.min(1440, parseInt(body.alertMinutes) || 5))); }
     if (body.autoResetMinutes !== undefined) { sets.push('auto_reset_minutes = ?'); vals.push(Math.max(1, Math.min(1440, parseInt(body.autoResetMinutes) || 5))); }
     if (body.windowMs !== undefined) { sets.push('window_ms = ?'); vals.push(Math.max(0, Math.min(86400000, parseInt(body.windowMs) || 0))); }
