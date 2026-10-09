@@ -5,8 +5,10 @@ import { createToken, getUser } from '../lib/auth.js';
 
 export const routes = [
   // GET /auth/login — redirect to Discord OAuth
+  // Secrets are .trim()ed: a trailing space pasted into the dashboard once shipped a
+  // client_id ending in %20, and Discord refused every login until a fresh sign-in exposed it.
   { method: '*', pattern: '/auth/login', handler: async ({ env, url }) => {
-    const redirect = `https://discord.com/api/oauth2/authorize?client_id=${env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(url.origin + '/auth/callback')}&response_type=code&scope=identify`;
+    const redirect = `https://discord.com/api/oauth2/authorize?client_id=${(env.DISCORD_CLIENT_ID || '').trim()}&redirect_uri=${encodeURIComponent(url.origin + '/auth/callback')}&response_type=code&scope=identify`;
     return Response.redirect(redirect, 302);
   } },
 
@@ -20,8 +22,8 @@ export const routes = [
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: env.DISCORD_CLIENT_ID,
-        client_secret: env.DISCORD_CLIENT_SECRET,
+        client_id: (env.DISCORD_CLIENT_ID || '').trim(),
+        client_secret: (env.DISCORD_CLIENT_SECRET || '').trim(),
         grant_type: 'authorization_code',
         code,
         redirect_uri: url.origin + '/auth/callback',
@@ -67,7 +69,7 @@ export const routes = [
 
   // GET /auth/google — redirect to Google OAuth
   { method: '*', pattern: '/auth/google', handler: async ({ env, url }) => {
-    const redirect = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${env.GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(url.origin + '/auth/google/callback')}&response_type=code&scope=openid%20profile&prompt=select_account`;
+    const redirect = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${(env.GOOGLE_CLIENT_ID || '').trim()}&redirect_uri=${encodeURIComponent(url.origin + '/auth/google/callback')}&response_type=code&scope=openid%20profile&prompt=select_account`;
     return Response.redirect(redirect, 302);
   } },
 
@@ -83,8 +85,8 @@ export const routes = [
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
-        client_id: env.GOOGLE_CLIENT_ID,
-        client_secret: env.GOOGLE_CLIENT_SECRET,
+        client_id: (env.GOOGLE_CLIENT_ID || '').trim(),
+        client_secret: (env.GOOGLE_CLIENT_SECRET || '').trim(),
         grant_type: 'authorization_code',
         code,
         redirect_uri: url.origin + '/auth/google/callback',
