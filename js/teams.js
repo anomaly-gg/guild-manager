@@ -140,14 +140,14 @@ const joinTeam = guard('joinTeam', async function() {
 });
 
 const deleteTeam = guard('deleteTeam', async function(teamId) {
-    if (!confirm('Delete this team? This cannot be undone.')) return;
+    if (!(await confirmDialog('Delete this team? This cannot be undone.', { confirmLabel: 'Delete team' }))) return;
     await api('DELETE', `/api/teams/${teamId}`);
     showToast('Team deleted');
     showTeamList();
 });
 
 const leaveTeam = guard('leaveTeam', async function(teamId) {
-    if (!confirm('Leave this team?')) return;
+    if (!(await confirmDialog('Leave this team?', { confirmLabel: 'Leave' }))) return;
     await api('POST', `/api/teams/${teamId}/leave`);
     showToast('Left team');
     showTeamList();

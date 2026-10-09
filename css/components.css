@@ -129,6 +129,8 @@
 .tf-check span { text-transform: none; letter-spacing: 0; font-size: 0.85rem; font-weight: 500; color: var(--text); }
 .tf-help { grid-column: 1 / -1; font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.4; }
 .tf-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+/* confirmDialog() message (util.js) — \n in messages stays a line break */
+.confirm-msg { white-space: pre-line; margin: 2px 0 14px; color: var(--text-muted); font-size: 0.95rem; line-height: 1.45; }
 @media (max-width: 480px) { .tform { grid-template-columns: 1fr; } }
 
 .t-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }

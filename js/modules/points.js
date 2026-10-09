@@ -237,7 +237,7 @@ function onClick(ev) {
 }
 
 const delLoot = guard('points.delloot', async (id) => {
-    if (!confirm('Remove this loot entry? Any points it deducted are not refunded.')) return;
+    if (!(await confirmDialog('Remove this loot entry? Any points it deducted are not refunded.', { confirmLabel: 'Remove' }))) return;
     const res = await api('DELETE', `/api/teams/${currentTeamId}/loot/${id}`);
     if (res.error) { showToast(res.error); return; }
     await reload();
@@ -248,7 +248,7 @@ const moveMember = guard('points.move', async (id, to) => {
     await reload();
 });
 const resetRotation = guard('points.resetrotation', async () => {
-    if (!confirm('Reset the rotation to join order? Every position is forgotten.')) return;
+    if (!(await confirmDialog('Reset the rotation to join order? Every position is forgotten.', { confirmLabel: 'Reset' }))) return;
     const res = await api('POST', `/api/teams/${currentTeamId}/rotation/reset`);
     if (res.error) { showToast(res.error); return; }
     showToast('Rotation reset'); await reload();
@@ -267,7 +267,7 @@ const bid = guard('points.bid', async (id) => {
     showToast('Bid placed'); await reload();
 });
 const closeAuction = guard('points.close', async (id) => {
-    if (!confirm('Close this auction? The top bidder is charged.')) return;
+    if (!(await confirmDialog('Close this auction? The top bidder is charged.', { confirmLabel: 'Close auction' }))) return;
     const res = await api('POST', `/api/teams/${currentTeamId}/auctions/${id}/close`);
     if (res.error) { showToast(res.error); return; }
     showToast('Auction closed'); await reload();

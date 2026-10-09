@@ -68,4 +68,27 @@ check('re-apply adds nothing (all existing or capped)', s == 200 and d['added'] 
 s, d = req('POST', f'/api/teams/{team}/bosses', {'name': 'Manual', 'type': 'interval', 'intervalMs': 3600000}, leader)
 check('manual create beyond cap is refused (cap intact)', s == 403 and d.get('premiumRequired'), d)
 
+# --- preset sync: pulls corrected preset data into matching timers ---
+s, d = req('POST', f'/api/teams/{team}/bosses/presets/sync', {'presetId': 'lordnine'}, member)
+check('plain member cannot sync', s == 403, d)
+s, d = req('POST', f'/api/teams/{team}/bosses/presets/sync', {'presetId': 'nope'}, leader)
+check('sync with unknown preset -> 404', s == 404, d)
+
+# drift three timers away from the preset, then sync them back
+req('PUT', f"/api/teams/{team}/bosses/{byname['Venatus']['id']}", {'intervalMs': 39600000}, leader)
+req('PUT', f"/api/teams/{team}/bosses/{byname['Roderick']['id']}", {'weeklyTime': '20:00'}, leader)
+req('PUT', f"/api/teams/{team}/bosses/{byname['Auraq']['id']}", {'location': 'Wrong spot'}, leader)
+s, d = req('POST', f'/api/teams/{team}/bosses/presets/sync', {'presetId': 'lordnine'}, leader)
+check('sync reports exactly the drifted timers as updated', s == 200 and sorted(d.get('updated', [])) == ['Auraq', 'Roderick', 'Venatus'], d)
+check('sync counts: 12 unchanged, none added, rest capped', d.get('unchanged') == 12 and d.get('added') == [] and len(d.get('skippedCap', [])) == len(ln['bosses']) - 15, {k: (len(v) if isinstance(v, list) else v) for k, v in d.items()})
+s, d = req('GET', f'/api/teams/{team}/bosses', token=leader)
+byname = {b['name']: b for b in d.get('bosses', [])}
+check('sync restored the interval rule', byname['Venatus']['interval_ms'] == 36000000, byname.get('Venatus'))
+check('sync restored the weekly time', byname['Roderick']['weekly_time'] == '19:00', byname.get('Roderick'))
+check('sync restored the location', byname['Auraq'].get('location') in (None, ''), byname.get('Auraq'))
+now = time.time() * 1000
+check('synced interval boss got a fresh next_spawn (~ +10h, no kill logged)', abs(byname['Venatus']['next_spawn'] - (now + 10 * 3600000)) < 120000, byname.get('Venatus'))
+s, d = req('POST', f'/api/teams/{team}/bosses/presets/sync', {'presetId': 'lordnine'}, leader)
+check('second sync is a no-op (15 already current)', s == 200 and d.get('updated') == [] and d.get('unchanged') == 15, d)
+
 n = sum(checks); print(f'\n{n}/{len(checks)} checks passed'); sys.exit(0 if n == len(checks) else 1)

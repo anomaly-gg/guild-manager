@@ -104,6 +104,31 @@ function showToast(message) {
     setTimeout(() => toast.remove(), 4000);
 }
 
+// Promise-based replacement for window.confirm: the app's own modal (native confirm blocks the
+// whole tab and looks foreign). Backdrop click and Escape cancel. Global so ES modules see it.
+function confirmDialog(message, { title = 'Are you sure?', confirmLabel = 'Confirm', danger = true } = {}) {
+    return new Promise((resolve) => {
+        const host = document.createElement('div');
+        host.innerHTML = `<div class="modal-backdrop" style="z-index:300"><div class="card modal-card">
+            <h2>${escapeHtml(title)}</h2>
+            <p class="confirm-msg">${escapeHtml(message)}</p>
+            <div class="tf-actions">
+                <button type="button" class="btn btn-secondary" data-c="0">Cancel</button>
+                <button type="button" class="btn ${danger ? 'btn-danger' : 'btn-primary'}" data-c="1">${escapeHtml(confirmLabel)}</button>
+            </div></div></div>`;
+        const done = (v) => { host.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+        const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+        host.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-backdrop')) return done(false);
+            const b = e.target.closest('[data-c]');
+            if (b) done(b.dataset.c === '1');
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.appendChild(host);
+        host.querySelector('[data-c="1"]').focus();
+    });
+}
+
 // Collapsible card sections (used by several tabs)
 function toggleSection(id, el) {
     document.getElementById(id).classList.toggle('open');

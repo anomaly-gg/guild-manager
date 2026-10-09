@@ -2,7 +2,7 @@
 
 import { json, safeJson } from '../lib/http.js';
 import { getNextFixedSpawn, getNextWeeklySpawn, getNextBiweeklySpawn, getNextTwiceDailySpawn, calcNextSpawn } from '../lib/spawn.js';
-import { bossInsertStmt, CATEGORIES } from '../lib/boss-create.js';
+import { bossInsertStmt, CATEGORIES, sameRule, nextSpawnFor } from '../lib/boss-create.js';
 import { killBoss } from '../lib/boss-kill.js';
 import { requireTeamMember, isPremiumTeam } from '../lib/team.js';
 import { limitsFor } from '../lib/limits.js';
@@ -11,18 +11,6 @@ import { queueScheduleRefresh } from '../lib/schedule-post.js';
 import { killAlert } from '../lib/boss-alerts.js';
 import { parseGroups, cleanLater } from '../lib/spawn-groups.js';
 import { queuePush } from '../lib/push-send.js';
-
-// Is the rule in this edit body the one the boss already has? Resending it (an older client, or a
-// form that sends everything) must not recalculate a running timer; only an actual change does.
-function sameRule(boss, body) {
-  const type = body.type || boss.type;
-  if (type !== boss.type) return false;
-  if (type === 'interval') return Number(body.intervalMs ?? boss.interval_ms) === boss.interval_ms;
-  if (type === 'fixed') return (body.fixedTime ?? boss.fixed_time) === boss.fixed_time;
-  if (type === 'weekly') return Number(body.weeklyDay ?? boss.weekly_day) === boss.weekly_day && (body.weeklyTime ?? boss.weekly_time) === boss.weekly_time;
-  const days = body.biweeklyDays ? JSON.stringify(body.biweeklyDays) : body.twiceDailyTimes ? JSON.stringify(body.twiceDailyTimes) : boss.biweekly_days;
-  return days === boss.biweekly_days;
-}
 
 export const routes = [
   // GET /api/teams/:id/bosses
@@ -263,6 +251,67 @@ export const routes = [
     }
     if (stmts.length) { await env.DB.batch(stmts); queueScheduleRefresh(ctx, env, teamId); }
     return json({ ok: true, added, skippedExisting, skippedCap, cap: Number.isFinite(cap) ? cap : null });
+  } },
+
+  // POST /api/teams/:id/bosses/presets/sync { presetId } — pull the preset's CURRENT data into the
+  // team's matching timers (matched by name, case-insensitive). Schedule rules, location, alerts,
+  // window and category are overwritten where they differ; missing preset bosses are added (cap
+  // permitting); extra team bosses are never touched. For when preset data gets corrected upstream.
+  { method: 'POST', pattern: /^\/api\/teams\/([^/]+)\/bosses\/presets\/sync$/, handler: async ({ request, env, ctx, user, params }) => {
+    const teamId = params[1];
+    const member = await requireTeamMember(env, teamId, user.userId);
+    if (!member || member.role === 'member') return json({ error: 'Officers+ only' }, 403);
+
+    const body = await safeJson(request);
+    const preset = body && findPreset(body.presetId);
+    if (!preset) return json({ error: 'Preset not found' }, 404);
+
+    const [existing, settings, premium] = await Promise.all([
+      env.DB.prepare('SELECT * FROM bosses WHERE team_id = ?').bind(teamId).all(),
+      env.DB.prepare('SELECT timezone FROM team_settings WHERE team_id = ?').bind(teamId).first(),
+      isPremiumTeam(env, teamId),
+    ]);
+    const tz = settings?.timezone || 'Asia/Manila';
+    const byName = new Map(existing.results.map(r => [String(r.name).toLowerCase(), r]));
+    const cap = limitsFor(premium).timers;
+    let room = Number.isFinite(cap) ? Math.max(0, cap - byName.size) : Infinity;
+
+    const stmts = [], updated = [], added = [], skippedCap = [];
+    let unchanged = 0;
+    for (const b of preset.bosses) {
+      const row = byName.get(b.name.toLowerCase());
+      if (!row) {
+        if (room <= 0) { skippedCap.push(b.name); continue; }
+        stmts.push(bossInsertStmt(env, teamId, b, tz).stmt); added.push(b.name); room--;
+        continue;
+      }
+      const sets = [], vals = [];
+      const location = b.location ? String(b.location).trim().slice(0, 80) : null;
+      if ((row.location || null) !== location) { sets.push('location = ?'); vals.push(location); }
+      if ((row.alert_minutes ?? 5) !== (b.alertMinutes || 5)) { sets.push('alert_minutes = ?'); vals.push(b.alertMinutes || 5); }
+      if ((row.auto_reset_minutes ?? 5) !== (b.autoResetMinutes || 5)) { sets.push('auto_reset_minutes = ?'); vals.push(b.autoResetMinutes || 5); }
+      const windowMs = Math.max(0, Math.min(86400000, parseInt(b.windowMs) || 0));
+      if ((row.window_ms || 0) !== windowMs) { sets.push('window_ms = ?'); vals.push(windowMs); }
+      const category = CATEGORIES.has(b.category) ? b.category : null;
+      if ((row.category || null) !== category) { sets.push('category = ?'); vals.push(category); }
+      if (!sameRule(row, b)) {
+        // interval rules keep counting from the last logged kill; fixed-style rules recompute
+        const nextSpawn = b.type === 'interval' && row.last_death
+          ? Math.max(Date.now(), row.last_death + (b.intervalMs || 3600000))
+          : nextSpawnFor(b, tz);
+        sets.push('type = ?', 'interval_ms = ?', 'fixed_time = ?', 'weekly_day = ?', 'weekly_time = ?', 'biweekly_days = ?', 'next_spawn = ?',
+          "status = 'waiting'", 'spawned_at = NULL', 'auto_reset_at = NULL', 'warned = 0', 'spawn_notified = 0', 'alert_soon_msg = NULL', 'alert_spawn_msg = NULL');
+        vals.push(b.type, b.type === 'interval' ? (b.intervalMs || null) : null, b.type === 'fixed' ? (b.fixedTime || null) : null,
+          b.type === 'weekly' ? (b.weeklyDay ?? null) : null, b.type === 'weekly' ? (b.weeklyTime || null) : null,
+          b.biweeklyDays ? JSON.stringify(b.biweeklyDays) : b.twiceDailyTimes ? JSON.stringify(b.twiceDailyTimes) : null, nextSpawn);
+      }
+      if (!sets.length) { unchanged++; continue; }
+      vals.push(row.id);
+      stmts.push(env.DB.prepare(`UPDATE bosses SET ${sets.join(', ')} WHERE id = ?`).bind(...vals));
+      updated.push(b.name);
+    }
+    if (stmts.length) { await env.DB.batch(stmts); queueScheduleRefresh(ctx, env, teamId); }
+    return json({ ok: true, updated, added, unchanged, skippedCap, cap: Number.isFinite(cap) ? cap : null });
   } },
 
   { method: 'GET', pattern: /^\/api\/teams\/([^/]+)\/bosses\/history$/, handler: async ({ env, user, params }) => {

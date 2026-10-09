@@ -225,7 +225,7 @@ const changeRole = guard('roster.role', async (userId, role) => {
 
 const kick = guard('roster.kick', async (userId) => {
     const m = members().find(x => x.id === userId);
-    if (!confirm(`Remove ${m?.username || 'this member'} from the team?`)) return;
+    if (!(await confirmDialog(`Remove ${m?.username || 'this member'} from the team?`, { confirmLabel: 'Remove' }))) return;
     const res = await api('POST', `/api/teams/${currentTeamId}/kick`, { userId });
     if (res.error) { showToast(res.error); return; }
     showToast('Member removed');
@@ -233,7 +233,7 @@ const kick = guard('roster.kick', async (userId) => {
 });
 
 const leave = guard('roster.leave', async () => {
-    if (!confirm(`Leave ${team().name}?`)) return;
+    if (!(await confirmDialog(`Leave ${team().name}?`, { confirmLabel: 'Leave' }))) return;
     const res = await api('POST', `/api/teams/${currentTeamId}/leave`);
     if (res.error) { showToast(res.error); return; }
     showToast('You left the team');

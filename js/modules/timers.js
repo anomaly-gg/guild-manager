@@ -168,7 +168,7 @@ const killBoss = guard('timers.kill', async (id) => {
 
 const deleteBoss = guard('timers.delete', async (id) => {
     const b = byId(id);
-    if (!confirm(`Remove the timer for ${b?.name || 'this boss'}?`)) return;
+    if (!(await confirmDialog(`Remove the timer for ${b?.name || 'this boss'}?`, { confirmLabel: 'Remove' }))) return;
     const res = await api('DELETE', `/api/teams/${currentTeamId}/bosses/${id}`);
     if (res.error) { showToast(res.error); return; }
     await reload(true);
@@ -176,7 +176,7 @@ const deleteBoss = guard('timers.delete', async (id) => {
 
 const removeAll = guard('timers.removeall', async () => {
     if (teamBosses.length === 0) { showToast('No timers to remove'); return; }
-    if (!confirm(`Remove ALL ${teamBosses.length} boss timers? This cannot be undone.`)) return;
+    if (!(await confirmDialog(`Remove ALL ${teamBosses.length} boss timers? This cannot be undone.`, { confirmLabel: 'Remove all' }))) return;
     for (const b of [...teamBosses]) await api('DELETE', `/api/teams/${currentTeamId}/bosses/${b.id}`);
     await reload(true);
     showToast('All timers removed');
@@ -407,7 +407,7 @@ async function importFile(input) {
         const existing = new Set(teamBosses.map(b => b.name.toLowerCase()));
         const fresh = data.bosses.filter(b => b.name && typeof b.name === 'string' && !existing.has(b.name.toLowerCase()));
         const skipped = data.bosses.length - fresh.length;
-        if (!confirm(`Import ${fresh.length} boss${fresh.length !== 1 ? 'es' : ''}?${skipped ? `\n${skipped} already exist and will be skipped.` : ''}`)) return;
+        if (!(await confirmDialog(`Import ${fresh.length} boss${fresh.length !== 1 ? 'es' : ''}?${skipped ? `\n${skipped} already exist and will be skipped.` : ''}`, { confirmLabel: 'Import', danger: false }))) return;
         const valid = new Set(['interval', 'fixed', 'weekly', 'twicedaily', 'biweekly']);
         let added = 0;
         for (const b of fresh) {
@@ -461,7 +461,7 @@ async function showPresets() {
         <p class="tf-help">${esc(preset.note || '')}</p>
         <div class="preset-tools"><button class="btn btn-sm btn-secondary" data-pick="all">Select all</button><button class="btn btn-sm btn-secondary" data-pick="none">Select none</button></div>
         <div class="preset-list" data-role="rows">${rowsHtml()}</div>
-        <div class="tf-actions"><button class="btn btn-secondary btn-sm" data-close="1">Cancel</button><button class="btn btn-primary" data-act="apply">Add bosses</button></div>`, { wide: true });
+        <div class="tf-actions"><button class="btn btn-secondary btn-sm" data-close="1">Cancel</button><button class="btn btn-secondary" data-act="sync" title="Update the timers this team already has from this preset to its current schedules">Sync times</button><button class="btn btn-primary" data-act="apply">Add bosses</button></div>`, { wide: true });
 
     const rows = back.querySelector('[data-role="rows"]');
     const selected = () => [...rows.querySelectorAll('input:checked:not(:disabled)')].map(i => i.dataset.name);
@@ -475,6 +475,9 @@ async function showPresets() {
         const btn = back.querySelector('[data-act="apply"]');
         btn.textContent = n ? `Add ${adding} boss${adding === 1 ? '' : 'es'}` : 'Add bosses';
         btn.disabled = n === 0 || (room != null && room === 0);
+        // Sync only makes sense when the team already has timers from this preset
+        const have = new Set(teamBosses.map(b => b.name.toLowerCase()));
+        back.querySelector('[data-act="sync"]').style.display = preset.bosses.some(b => have.has(b.name.toLowerCase())) ? '' : 'none';
     };
     updateCount();
     rows.addEventListener('change', updateCount);
@@ -485,6 +488,21 @@ async function showPresets() {
         const pick = e.target.closest('[data-pick]');
         if (pick) { rows.querySelectorAll('input:not(:disabled)').forEach(i => { i.checked = pick.dataset.pick === 'all'; }); updateCount(); return; }
         if (e.target.closest('[data-act="upgrade"]')) { e.preventDefault(); closeModal(); showUpgradeModal(); return; }
+        if (e.target.closest('[data-act="sync"]')) {
+            if (!(await confirmDialog(`Update this team's ${preset.game} timers to the preset's current schedules?\nSchedule, location, alert and category changes you made to those timers are overwritten. Timers not in the preset are untouched.`, { confirmLabel: 'Sync times', danger: false }))) return;
+            const btn = e.target.closest('[data-act="sync"]'); btn.disabled = true;
+            const res = await api('POST', `/api/teams/${currentTeamId}/bosses/presets/sync`, { presetId: preset.id });
+            if (res.error) { showToast(res.error); btn.disabled = false; return; }
+            closeModal();
+            const parts = [];
+            if (res.updated.length) parts.push(`${res.updated.length} updated`);
+            if (res.added.length) parts.push(`${res.added.length} added`);
+            if (res.unchanged) parts.push(`${res.unchanged} already current`);
+            if (res.skippedCap?.length) parts.push(`${res.skippedCap.length} not added: free plan cap`);
+            showToast(parts.join(' · ') || 'Nothing to sync');
+            await reload(true);
+            return;
+        }
         if (e.target.closest('[data-act="apply"]')) {
             const names = selected();
             if (!names.length) return;

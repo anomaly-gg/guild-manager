@@ -4,7 +4,7 @@
 
 import { esc } from './timer-cards.js?v=20260923e';
 import * as ScheduleCard from './schedule-settings.js?v=20260930c';
-import * as Webhooks from './webhook-list.js?v=20260930c';
+import * as Webhooks from './webhook-list.js?v=20261009b';
 
 const TIMEZONES = ['Asia/Manila', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Singapore', 'Australia/Sydney', 'Pacific/Auckland'];
 
@@ -256,7 +256,7 @@ const act = guard('settings.act', async (a, btn) => {
         case 'save-team': await put({ teamDescription: val('sDesc').trim(), timezone: val('sTz') }, 'Team saved'); break;
         case 'wh-add': case 'wh-test': case 'wh-remove': if (await Webhooks.act(a, btn, root())) await reload(); break;
         case 'discord-add': { const d = await api('GET', `/api/teams/${T()}/discord-link`); if (d.error) { showToast(d.error); break; } window.location.href = d.url; break; }
-        case 'discord-unlink': if (confirm('Unlink this Discord server? Slash commands stop working there until it is linked again.')) { if (await put({ unlinkDiscordGuild: btn.dataset.guild }, 'Server unlinked')) await reload(); } break;
+        case 'discord-unlink': if (await confirmDialog('Unlink this Discord server? Slash commands stop working there until it is linked again.', { confirmLabel: 'Unlink' })) { if (await put({ unlinkDiscordGuild: btn.dataset.guild }, 'Server unlinked')) await reload(); } break;
         case 'save-notif': await put({ onWarning: on('sOnWarning'), onSpawn: on('sOnSpawn'), onEvent: on('sOnEvent'), onLoot: on('sOnLoot'), eventReminderMinutes: Math.min(120, Math.max(1, parseInt(val('sReminder')) || 15)) }, 'Alert settings saved'); break;
         case 'save-autodelete': await put({ discordAutoDelete: on('sAutoDel'), discordDeleteActionMin: Math.max(1, Math.min(14, parseInt(val('sDelAction')) || 1)), discordDeleteNextMin: Math.max(1, Math.min(14, parseInt(val('sDelNext')) || 5)) }, 'Reply clean-up saved'); break;
         case 'save-attendance': await put({ attendancePoints: Math.max(0, Math.min(100, parseInt(val('sAttPts')) || 0)), attendanceSelfCheckin: on('sAttSelf'), attendanceAutoApprove: on('sAttAuto') }, 'Attendance settings saved'); break;
@@ -273,10 +273,10 @@ const act = guard('settings.act', async (a, btn) => {
             if (await put({ teamIcon: src }, 'Team icon saved')) { _invalidateForMutation('/api/teams'); await reload(); }
             break;
         }
-        case 'remove-icon': if (confirm('Remove the team icon?')) { if (await put({ teamIcon: '' }, 'Team icon removed')) { _invalidateForMutation('/api/teams'); await reload(); } } break;
+        case 'remove-icon': if (await confirmDialog('Remove the team icon?', { confirmLabel: 'Remove' })) { if (await put({ teamIcon: '' }, 'Team icon removed')) { _invalidateForMutation('/api/teams'); await reload(); } } break;
         case 'transfer': {
             const sel = $('sTransfer'); const name = sel?.selectedOptions[0]?.text;
-            if (!sel?.value || !confirm(`Transfer leadership to ${name}? You become an officer.`)) return;
+            if (!sel?.value || !(await confirmDialog(`Transfer leadership to ${name}? You become an officer.`, { confirmLabel: 'Transfer' }))) return;
             const r = await api('POST', `/api/teams/${T()}/transfer`, { userId: sel.value });
             if (r.error) { showToast(r.error); return; }
             showToast('Leadership transferred'); openTeam(T());

@@ -60,7 +60,7 @@ export async function act(action, btn, root) {
         return false;
     }
     if (action === 'wh-remove') {
-        if (!confirm(REMOVE[kind](!!btn.dataset.last))) return false;
+        if (!(await confirmDialog(REMOVE[kind](!!btn.dataset.last), { confirmLabel: 'Remove' }))) return false;
         const r = await api('DELETE', `/api/teams/${T()}/webhooks/${kind}/${id}`);
         if (r.error) { showToast(r.error); return false; }
         showToast('Channel removed');

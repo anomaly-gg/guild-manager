@@ -6,6 +6,19 @@ import { getNextFixedSpawn, getNextWeeklySpawn, getNextBiweeklySpawn, getNextTwi
 // Timer categories besides the default (boss): shared by create + edit validation.
 export const CATEGORIES = new Set(['event', 'reset']);
 
+// Is the rule in this create-style body the one the boss row already has? Shared by the edit
+// route (resent unchanged rules must not recalculate running timers) and preset sync (only
+// rules that actually differ get rewritten).
+export function sameRule(boss, body) {
+  const type = body.type || boss.type;
+  if (type !== boss.type) return false;
+  if (type === 'interval') return Number(body.intervalMs ?? boss.interval_ms) === boss.interval_ms;
+  if (type === 'fixed') return (body.fixedTime ?? boss.fixed_time) === boss.fixed_time;
+  if (type === 'weekly') return Number(body.weeklyDay ?? boss.weekly_day) === boss.weekly_day && (body.weeklyTime ?? boss.weekly_time) === boss.weekly_time;
+  const days = body.biweeklyDays ? JSON.stringify(body.biweeklyDays) : body.twiceDailyTimes ? JSON.stringify(body.twiceDailyTimes) : boss.biweekly_days;
+  return days === boss.biweekly_days;
+}
+
 export function nextSpawnFor(b, tz, now = Date.now()) {
   switch (b.type) {
     case 'interval': return now + (b.intervalMs || 3600000);

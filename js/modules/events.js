@@ -345,7 +345,7 @@ const rsvp = guard('events.rsvp', async (id, status, role) => {
 
 const deleteEvent = guard('events.delete', async (id) => {
     const e = byId(id);
-    if (!confirm(`Delete "${e?.title || 'this event'}"?`)) return;
+    if (!(await confirmDialog(`Delete "${e?.title || 'this event'}"?`, { confirmLabel: 'Delete' }))) return;
     const res = await api('DELETE', `/api/teams/${currentTeamId}/events/${id}`);
     if (res.error) { showToast(res.error); return; }
     expanded.delete(id);
