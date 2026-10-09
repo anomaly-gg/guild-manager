@@ -228,7 +228,7 @@ export const routes = [
 
   // GET /api/presets — built-in boss lists per game (free)
   { method: 'GET', pattern: '/api/presets', handler: async () => {
-    return json({ presets: PRESETS.map(p => ({ id: p.id, game: p.game, note: p.note, bosses: p.bosses })) });
+    return json({ presets: PRESETS.map(p => ({ id: p.id, game: p.game, note: p.note, clusters: p.clusters || [], bosses: p.bosses })) });
   } },
 
   // POST /api/teams/:id/bosses/presets { presetId, names?: [] } — add a game's bosses to the team.

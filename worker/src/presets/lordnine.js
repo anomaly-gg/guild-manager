@@ -10,6 +10,8 @@ const biweekly = (name, days, location) => ({ name, type: 'biweekly', biweeklyDa
 export const LORD_NINE = {
   id: 'lordnine',
   game: 'Lord Nine',
+  // one cluster: the SEA calendar the boss list was built from (sets the team timezone on setup)
+  clusters: [{ label: 'SEA (GMT+8)', tz: 'Asia/Manila' }],
   note: 'Respawn timers start counting when you log the first kill. Day/time bosses use the SEA server schedule in your team timezone; check the ones that differ on your server.',
   bosses: [
     // respawn after kill

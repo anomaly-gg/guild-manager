@@ -71,8 +71,58 @@ const createTeam = guard('createTeam', async function() {
     if (data.error) { showToast(data.error); document.getElementById('deathModal').innerHTML = ''; return; }
     document.getElementById('deathModal').innerHTML = '';
     showToast(`Team "${name}" created!`);
-    showTeamList();
+    _invalidateForMutation('/api/teams');
+    showChooseGameModal(data.team.id);
 });
+
+// New-team onboarding: pick the game (loads its boss preset + sets the team timezone to the
+// server clock) or skip. Either way the team opens afterwards.
+async function showChooseGameModal(teamId) {
+    const host = document.getElementById('deathModal');
+    host.innerHTML = `<div class="modal-backdrop"><div class="card modal-card"><div class="spinner"></div></div></div>`;
+    const data = await api('GET', '/api/presets');
+    const presets = data.presets || [];
+    if (!presets.length) { host.innerHTML = ''; openTeam(teamId); return; }
+
+    const gameBtns = presets.map((p, i) =>
+        `<button type="button" class="menu-item" data-pick="${i}"><b>${escapeHtml(p.game)}</b> — ${p.bosses.length} timers ready</button>`).join('');
+    host.innerHTML = `<div class="modal-backdrop"><div class="card modal-card"><h2>What game is this guild for?</h2>
+        <p class="tf-help">Picking a game loads its boss timers and sets the team clock to the server's timezone. You can change or remove any of it later.</p>
+        <div data-role="choices">${gameBtns}</div>
+        <div class="tf-actions"><button type="button" class="btn btn-secondary" data-skip="1">Other game / skip</button></div>
+    </div></div>`;
+    const back = host.firstElementChild;
+    back.addEventListener('click', async (e) => {
+        if (e.target.closest('[data-skip]')) { host.innerHTML = ''; openTeam(teamId); return; }
+        const pickBtn = e.target.closest('[data-pick]');
+        if (!pickBtn) return;
+        const preset = presets[Number(pickBtn.dataset.pick)];
+        const clusters = preset.clusters || [];
+        if (clusters.length > 1) {
+            const box = back.querySelector('[data-role="choices"]');
+            back.querySelector('h2').textContent = 'Which server cluster?';
+            box.innerHTML = clusters.map((c, i) =>
+                `<button type="button" class="menu-item" data-cluster="${i}"><b>${escapeHtml(c.label)}</b> — timers follow this server clock</button>`).join('');
+            box.onclick = (ev) => {
+                const cb = ev.target.closest('[data-cluster]');
+                if (cb) _applyGameChoice(teamId, preset, clusters[Number(cb.dataset.cluster)]);
+            };
+            return;
+        }
+        _applyGameChoice(teamId, preset, clusters[0] || null);
+    });
+}
+
+async function _applyGameChoice(teamId, preset, cluster) {
+    const host = document.getElementById('deathModal');
+    host.innerHTML = `<div class="modal-backdrop"><div class="card modal-card"><div class="spinner"></div></div></div>`;
+    if (cluster?.tz) await api('PUT', `/api/teams/${teamId}/settings`, { timezone: cluster.tz });
+    const res = await api('POST', `/api/teams/${teamId}/bosses/presets`, { presetId: preset.id });
+    host.innerHTML = '';
+    if (res.error) showToast(res.error);
+    else showToast(`${preset.game}: ${res.added.length} timers added${cluster ? ` · team clock set to ${cluster.label}` : ''}`);
+    openTeam(teamId);
+}
 
 const joinTeam = guard('joinTeam', async function() {
     const code = document.getElementById('inviteCode').value.trim();

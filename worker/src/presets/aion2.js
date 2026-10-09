@@ -15,6 +15,11 @@ const daysAt = (days, time) => days.map(day => ({ day, time }));
 export const AION2 = {
   id: 'aion2',
   game: 'Aion 2',
+  // server clusters: picking one on team setup sets the team timezone to the server clock
+  clusters: [
+    { label: 'Asia (GMT+8)', tz: 'Asia/Manila' },
+    { label: 'Global (GMT+9)', tz: 'Asia/Seoul' },
+  ],
   note: 'Times are server time — set the team timezone in Settings to your server\'s clock (Global = GMT+9, Asia = GMT+8). The Mon/Thu/Sat 19:00 and 22:00 rifts are also the Rift Domination (PvP) entry. Fixed schedules reset on their own; no kill logging needed.',
   bosses: [
     // every 3 hours, 8× a day
